@@ -9,7 +9,7 @@ function init() {
     /* Organization of the scene
         scene
             group
-                geodesics
+                integrals
                 surfs (sphere)
                     lines
             lights
@@ -24,6 +24,9 @@ function init() {
     lineDataframe = []
     lines = new three.Group
     group.add(lines)
+
+    integrals = new three.Group
+    group.add(integrals)
 
     scene.add(group)
 

@@ -11,6 +11,7 @@
     <script src='/node_modules/three/examples/js/controls/TrackballControls.js'></script>
     <script src='/node_modules/@youwol/three-extra/dist/@youwol/three-extra.js'></script>
     <script src='/node_modules/@youwol/kepler/dist/@youwol/kepler.js'></script>
+    <script src='/node_modules/@alfredo-taboada/stress/dist/@alfredo-taboada/stress.js'></script>
     <script src="https://kit.fontawesome.com/daa834e337.js" crossorigin="anonymous"></script>
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
         integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
@@ -22,7 +23,6 @@
     <script type="text/javascript" src='./js/postInit.js'></script>
     <script type="text/javascript" src='./js/utils.js'></script>
     <script type="text/javascript" src='./js/init.js'></script>
-
 </head>
 <body>
     <div class="loading" id="js-loader">
@@ -89,6 +89,7 @@
         const io        = globalThis['@youwol/io']
         const extra     = globalThis['@youwol/three-extra']
         const kepler    = globalThis['@youwol/kepler']
+        const stress    = globalThis['@alfredo-taboada/stress']
 
         const model = {
             bbox: false,

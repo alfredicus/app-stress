@@ -9,6 +9,7 @@
     "author": "fmaerten",
     "license": "MIT",
     "dependencies": {
+        "@alfredo-taboada/stress": "^0.0.3",
         "@youwol/dataframe": "^0.0.35",
         "@youwol/geometry": "^0.0.21",
         "@youwol/io": "^0.0.25-wip",

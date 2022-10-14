@@ -65,7 +65,7 @@ function generateSphere() {
     }
     l.endLine()
 
-    createLineFromPl(l.buffer).forEach( skin => sphere.add(skin) )
+    createLineFromPl(l.buffer, '#000000', 0.002).forEach( skin => sphere.add(skin) )
     
     arrow([0,0,1], [0,0,1], [0,0,1.6], sphere, 0x0000ff, 'Up') // up
     arrow([1,0,0], [1,0,0], [1.6,0,0], sphere, 0xff0000, 'East') // east
