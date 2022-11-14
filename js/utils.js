@@ -115,51 +115,63 @@ function connectGUI() {
 
     // ---------------------------------
 
-    const integralCurves = gui.addFolder('Integral curves')
-    // integralCurves.add(myObject, 'showLines').name('Visible').onChange(value => {
+    const guiC = gui.addFolder('Integral curves')
+    // gui.add(myObject, 'showLines').name('Visible').onChange(value => {
     //     lines.visible = value
     // })
-    // integralCurves.add(myObject, 'colorTable', colorTables).name('Color table').onChange(value => {
+    // gui.add(myObject, 'colorTable', colorTables).name('Color table').onChange(value => {
     //     plines.lut = value
     //     updateLines()
     // })
-    // integralCurves.add(myObject, 'attribute', attributes).name('Attribute').onChange(value => {
+    // gui.add(myObject, 'attribute', attributes).name('Attribute').onChange(value => {
     //     plines.attr = value
     //     updateLines()
     // })
-    integralCurves.add(myObject, 'lineWidth', 0, 0.01, 0.0001).name('Width').onChange( value => {
+    guiC.add(myObject, 'lineWidth', 0, 0.01, 0.0001).name('Width').onChange( value => {
         integralWidth = value
         rebuildIntegralCurves(theta, phi, integralWidth)
+        rebuildEquipotentialCurves(theta, phi, integralWidth)
     })
 
-    // integralCurves.add(myObject, 'theta', 0, 90, 1).name('Theta').onChange( function(value) {
+    // gui.add(myObject, 'theta', 0, 90, 1).name('Theta').onChange( function(value) {
     // })
     function rebuildIntegralCurves(theta, phi, width) {
         integrals.clear()
-        const buffer = integralBuilder.getIntegral(theta, phi)
+        const buffer = integralBuilder.generate(theta, phi)
         const lines = createLineFromPl(buffer, color = '#0000ff', width)
-        // for (let i=0; i<lines.length; i++) {
-        //     integrals.add(lines[i])
-        // }
         lines.forEach( line => integrals.add(line) )
     }
 
-    let integralBuilder = new stress.IntegralCurve([-1, 0, -0.5], 1.001)
+    function rebuildEquipotentialCurves(theta, phi, width) {
+        equipotentials.clear()
+        const buffer = equipotentialBuilder.generate(theta, phi)
+        const lines = createLineFromPl(buffer, color = '#0000ff', width)
+        lines.forEach( line => equipotentials.add(line) )
+    }
+
+    let integralBuilder      = new stress.IntegralCurve([-1, 0, -0.5], 1.001)
+    let equipotentialBuilder = new stress.EquipotentialCurve([-1, 0, -0.5], 1.001)
     let theta = 0
     let phi = 0
     let integralWidth = 0.001
 
-    integralCurves.add(myObject, 'sigma2', 0, 1, 0.01).name('σ2').onChange( value => {
-        integralBuilder = new stress.IntegralCurve([-1, 0, -value], 1.001)
+    guiC.add(myObject, 'sigma2', 0, 1, 0.01).name('σ2').onChange( value => {
+        integralBuilder      = new stress.IntegralCurve([-1, 0, -value], 1.001)
+        equipotentialBuilder = new stress.EquipotentialCurve([-1, 0, -value], 1.001)
         rebuildIntegralCurves(theta, phi, integralWidth)
+        rebuildEquipotentialCurves(theta, phi, integralWidth)
     })
-    integralCurves.add(myObject, 'theta', 0, 90, 1).name('Theta').onChange( value => {
+
+    guiC.add(myObject, 'theta', 0, 90, 1).name('Theta').onChange( value => {
         theta = value
         rebuildIntegralCurves(theta, phi, integralWidth)
+        rebuildEquipotentialCurves(theta, phi, integralWidth)
     })
-    integralCurves.add(myObject, 'phi', 0, 90, 1).name('Phi').onChange( value => {
+
+    guiC.add(myObject, 'phi', 0, 90, 1).name('Phi').onChange( value => {
         phi = value
         rebuildIntegralCurves(theta, phi, integralWidth)
+        rebuildEquipotentialCurves(theta, phi, integralWidth)
     })
 
     // ---------------------------------

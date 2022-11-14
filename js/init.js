@@ -10,6 +10,8 @@ function init() {
         scene
             group
                 integrals
+                equipotentials
+                mohrCoulombs
                 surfs (sphere)
                     lines
             lights
@@ -27,6 +29,12 @@ function init() {
 
     integrals = new three.Group
     group.add(integrals)
+
+    equipotentials = new three.Group
+    group.add(equipotentials)
+
+    mohrCoulombs = new three.Group
+    group.add(mohrCoulombs)
 
     scene.add(group)
 
@@ -59,7 +67,7 @@ function init() {
             renderer,
             controls, 
             renderFunctions: renderFct, // will also add the cube in renderFct
-            labels: ['Right', 'Left', 'Up', 'Down', 'Front', 'Back'],
+            labels: ['East', 'West', 'Up', 'Down', 'South', 'North'],
             // labels: ['East', 'West', 'Up', 'Down', 'South', 'North'],
             // labels: ['Y', '-Y', 'Z', '-Z', 'X', '-X'],
 
