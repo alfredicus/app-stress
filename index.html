@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta charset="utf-8">
-    <title>Testing Kepler: Spiral</title>
+    <title>Stress inversion</title>
     <script src='/app-stress/node_modules/@youwol/dataframe/dist/@youwol/dataframe.js'></script>
     <script src='/app-stress/node_modules/@youwol/math/dist/@youwol/math.js'></script>
     <script src='/app-stress/node_modules/@youwol/geometry/dist/@youwol/geometry.js'></script>
@@ -15,6 +15,10 @@
     <script src="https://kit.fontawesome.com/daa834e337.js" crossorigin="anonymous"></script>
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
         integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://unpkg.com/d3fc@14.0.27/build/d3fc.js"></script>
+
     <link rel="stylesheet" href="js/style.css">
     <script src="https://cdn.jsdelivr.net/npm/lil-gui@0.17"></script>
     <script type="text/javascript" src='./js/generateSphere.js'></script>
@@ -23,6 +27,9 @@
     <script type="text/javascript" src='./js/postInit.js'></script>
     <script type="text/javascript" src='./js/utils.js'></script>
     <script type="text/javascript" src='./js/init.js'></script>
+    <script type="text/javascript" src='./js/gui.js'></script>
+    <script type="text/javascript" src='./js/mohrCircle.js'></script>
+    <script type="text/javascript" src='./js/stress-test.js'></script>
 </head>
 <body>
     <div class="loading" id="js-loader">
@@ -60,8 +67,8 @@
         </a>
     </div>
 
-    <div id="menu" style="position: absolute; opacity: 70%; margin-bottom:3px; top: -25px; left: 5px;">
-    <input id="upload" type="file" style="visibility:hidden" />
+    <!--
+    
      <div class="top-1 start-1" style='position: absolute; opacity: 75%; left: 250px; top: 30px'>
         <div class="card" style="width: 300px; height: 150px; background-color: rgb(255, 255, 255);">
             <div class="card-body">
@@ -75,11 +82,19 @@
                 <div class="card-item sigma-3">
                     <p class="card-text" style='font-family: "Lucida Console", "Courier New", monospace;'>σ3: 0.0</p>
                 </div>
-                <!-- TO CHANGE TEXT IN CARDS -->
-                <!-- https://stackoverflow.com/questions/64733209/is-there-a-way-to-change-a-card-text-using-javascript -->
             </div>
         </div>
+    </div> -->
+
+    <div id="menu" style="position: absolute; opacity: 70%; margin-bottom:3px; top: -25px; left: 5px;"></div>
+    
+    
+    <div class="top-1 start-1" style='position: absolute; opacity: 75%; left: 260px; top: 10px'>
+        <div id="mohr" class="card" style="width: 200px; height: 200px; background-color: rgb(193, 193, 193);">
+        </div>
     </div>
+
+    <input id="upload" type="file" style="visibility:hidden" />
 
     <script>
         const three     = globalThis['THREE']        
@@ -89,7 +104,7 @@
         const io        = globalThis['@youwol/io']
         const extra     = globalThis['@youwol/three-extra']
         const kepler    = globalThis['@youwol/kepler']
-        const stress    = globalThis['@alfredo-taboada/stress']
+        let stress    = globalThis['@alfredo-taboada/stress']
 
         const model = {
             bbox: false,
@@ -128,6 +143,7 @@
 
         init()
         load()
+
         requestAnimationFrame( animate )
     </script>
 </body>
