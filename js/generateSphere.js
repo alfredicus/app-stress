@@ -70,6 +70,10 @@ function generateSphere() {
     arrow([0,0,1], [0,0,1], [0,0,1.6], sphere, 0x0000ff, 'Up') // up
     arrow([1,0,0], [1,0,0], [1.6,0,0], sphere, 0xff0000, 'East') // east
     arrow([0,1,0], [0,1,0], [0,1.6,0], sphere, 0x00ff00, 'North') // north
+
+    arrow([0,0,1], [0,0,1], [0,0,2], sphere, 0x0000ff, 'σ2') // up
+    arrow([1,0,0], [1,0,0], [2,0,0], sphere, 0xff0000, 'σ1') // east
+    arrow([0,1,0], [0,1,0], [0,2,0], sphere, 0x00ff00, 'σ3') // north
 }
 
 function arrow(d, o, pos, parent, color, name) {

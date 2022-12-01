@@ -94,6 +94,72 @@ function connectGUI() {
 
     // ---------------------------------
 
+    const stressTensor = new stress.StressTensor({
+        trendS1 : 0, 
+        plungeS1: 0, 
+        trendS3 : 0, 
+        plungeS3: 0, 
+        masterStress: 'σ1'
+    })
+
+    const tensor = {
+        master      : 'σ1',
+        trendMaster : 0,
+        plungeMaster: 0,
+        trendSlave  : 0,
+        plungeSlave : 0
+    }
+    const tensorFolder = gui.addFolder('Stress tensor orientation')
+
+    function updateStressTensor() {
+        tensor.plungeSlave = stressTensor.plunge
+    }
+
+    tensorFolder.add(tensor, 'master', ['σ1', 'σ3']).name('Master principal stress').onChange( value => {
+        tm.name(`    Trend ${value}`)
+        pm.name(`    Plunge ${value}`)
+        if (value === 'σ1') {
+            ts.name(`    Trend σ3`)
+            ps.name(`    Plunge σ3`)
+        }
+        else {
+            ts.name(`    Trend σ1`)
+            ps.name(`    Plunge σ1`)
+        }
+        stressTensor.changeMasterStress(value)
+        updateStressTensor()
+    })
+    const tm = tensorFolder.add(tensor, 'trendMaster', 0, 360, 1).name('    Trend σ1').onChange( v => {
+        if (tensor.master === 'σ1') {
+            stressTensor.trendS1 = v
+        }
+        else {
+            stressTensor.trendS3 = v
+        }
+        updateStressTensor()
+    })
+    const pm = tensorFolder.add(tensor, 'plungeMaster', -90, 90, 1).name('    Plunge σ1').onChange( v => {
+        if (tensor.master === 'σ1') {
+            stressTensor.plungeS1 = v
+        }
+        else {
+            stressTensor.plungeS3 = v
+        }
+        updateStressTensor()
+    })
+    const ts = tensorFolder.add(tensor, 'trendSlave', 0, 360, 1).name('    Trend σ3').onChange( v => {
+        if (tensor.master === 'σ1') {
+            stressTensor.trendS3 = v
+        }
+        else {
+            stressTensor.trendS1 = v
+        }
+        updateStressTensor()
+    })
+    const ps = tensorFolder.add(tensor, 'plungeSlave').name('    Plunge σ3').disable().listen()
+
+    // ---------------------------------
+
     let integralBuilder      = new stress.IntegralCurve     ([-myObject.sigma1, -myObject.sigma3, -myObject.sigma2], 1.001)
     let equipotentialBuilder = new stress.EquipotentialCurve([-myObject.sigma1, -myObject.sigma3, -myObject.sigma2], 1.001)
     let mohrCoulombBuilder   = new stress.MohrCoulombCurve  ([-myObject.sigma1, -myObject.sigma3, -myObject.sigma2], 1.001)
