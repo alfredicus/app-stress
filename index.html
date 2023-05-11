@@ -1,152 +1,83 @@
 <!DOCTYPE html>
 <html>
+
 <head>
     <meta charset="utf-8">
     <title>Stress inversion</title>
-    <script src='/app-stress/node_modules/@youwol/dataframe/dist/@youwol/dataframe.js'></script>
-    <script src='/app-stress/node_modules/@youwol/math/dist/@youwol/math.js'></script>
-    <script src='/app-stress/node_modules/@youwol/geometry/dist/@youwol/geometry.js'></script>
-    <script src='/app-stress/node_modules/@youwol/io/dist/@youwol/io.js'></script>
-    <script src='/app-stress/node_modules/three/build/three.min.js'></script>
-    <script src='/app-stress/node_modules/three/examples/js/controls/TrackballControls.js'></script>
-    <script src='/app-stress/node_modules/@youwol/three-extra/dist/@youwol/three-extra.js'></script>
-    <script src='/app-stress/node_modules/@youwol/kepler/dist/@youwol/kepler.js'></script>
     <script src='/stress/dist/@alfredo-taboada/stress.js'></script>
     <script src="https://kit.fontawesome.com/daa834e337.js" crossorigin="anonymous"></script>
-    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
-        integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
-
-    <script src="https://d3js.org/d3.v7.min.js"></script>
-    <script src="https://unpkg.com/d3fc@14.0.27/build/d3fc.js"></script>
-
-    <link rel="stylesheet" href="js/style.css">
     <script src="https://cdn.jsdelivr.net/npm/lil-gui@0.17"></script>
-    <script type="text/javascript" src='./js/generateSphere.js'></script>
-    <script type="text/javascript" src='./js/doLines.js'></script>
-    <script type="text/javascript" src='./js/doPointset.js'></script>
-    <script type="text/javascript" src='./js/postInit.js'></script>
-    <script type="text/javascript" src='./js/utils.js'></script>
-    <script type="text/javascript" src='./js/init.js'></script>
-    <script type="text/javascript" src='./js/gui.js'></script>
-    <script type="text/javascript" src='./js/mohrCircle.js'></script>
-    <script type="text/javascript" src='./js/stress-test.js'></script>
+    <link rel="stylesheet" href="style.css">
 </head>
-<body>
-    <div class="loading" id="js-loader">
-        <div class="loader"></div>
-    </div>
-    <div class='right-container' style="position: absolute; right: 0px; top: 5px">
-        <div id='orientCubeWrapper'></div>
-    </div>
-    <div class='home-container'>
-        <span>
-            <div class='buttonIcon' style="position: absolute; right: 60px; top: -10px">
-                <div id='goHome'><i class='fa fa-home'></i></div>
-            </div>
-            <div class='buttonIcon' style="position: absolute; right: 30px; top: -10px">
-                <div id='saveHome'><i class='fa fa-clinic-medical'></i></div>
-            </div>
 
-            <input id="btnFullscreen" type="button" value="Fulll screen" onclick="fullScreen()" style="position: absolute; opacity: 40%; margin-bottom:3px; top: 110px; right: 5px;">
-        </span>
-    </div>
-    
+<body>
     <div class="bottom-1 start-1" style='position: absolute; opacity: 70%; left: 20px; bottom: 20px;'>
         <a href="https://www.youwol.com/" target="_blank">
-            <img src="youwol.png" style="width: 150px;">
+            <img src="youwol.png" style="width: 100px;">
         </a>
     </div>
-    <!-- <div class="bottom-1 start-1" style='position: absolute; opacity: 70%; left: 55px; bottom: 0px'>
-        <a href="https://www.youwol.com/" target="_blank">
-            <div class="card-title" style='color: black; font-size: 30px; font-weight: bold; z-index: 999;'>YouWol</div>
-        </a>
-    </div> -->
     <div class="bottom-1 start-1" style='position: absolute; opacity: 70%; right: 20px; bottom: 20px;'>
         <a href="http://www.gm.univ-montp2.fr/" target="_blank">
-            <img src="geosciences.png" alt="geosciences" style="width: 130px;">
+            <img src="geosciences.png" alt="geosciences" style="width: 100px;">
         </a>
     </div>
 
-    <!--
-    
-     <div class="top-1 start-1" style='position: absolute; opacity: 75%; left: 250px; top: 30px'>
-        <div class="card" style="width: 300px; height: 150px; background-color: rgb(255, 255, 255);">
-            <div class="card-body">
-                <div class="card-title" style='font-size: 20px; font-weight: bold;'>Inversion info</div>
-                <div class="card-item sigma-1">
-                    <p class="card-text" style='font-family: "Lucida Console", "Courier New", monospace;'>σ1: 0.0</p>
-                </div>
-                <div class="card-item sigma-2">
-                    <p class="card-text" style='font-family: "Lucida Console", "Courier New", monospace;'>σ2: 0.0</p>
-                </div>
-                <div class="card-item sigma-3">
-                    <p class="card-text" style='font-family: "Lucida Console", "Courier New", monospace;'>σ3: 0.0</p>
-                </div>
-            </div>
-        </div>
-    </div> -->
-
-    <div id="menu" style="position: absolute; opacity: 70%; margin-bottom:3px; top: -25px; left: 5px;"></div>
-    
-    
-    <div class="top-1 start-1" style='position: absolute; opacity: 75%; left: 260px; top: 10px'>
-        <div id="mohr" class="card" style="width: 200px; height: 200px; background-color: rgb(193, 193, 193);">
+    <div class="top-1 start-1" style='position: absolute; opacity: 75%; left: 10px; top: 50px'>
+        <div id="result" class="card" style="width: 200px; height: 200px; background-color: rgb(193, 193, 193);">
         </div>
     </div>
 
+    <div class="top-1 start-1" style='position: absolute; opacity: 75%; left: 10px; top: 260px'>
+        <div id="result1" class="card" style="width: 200px; height: 200px; background-color: rgb(193, 193, 193);">
+        </div>
+    </div>
+
+    <div id="menu" style="position: absolute; opacity: 100%; margin-bottom:3px; top: 5px; left: 5px;"></div>
     <input id="upload" type="file" style="visibility:hidden" />
 
     <script>
-        const three     = globalThis['THREE']        
-        const dataframe = globalThis['@youwol/dataframe']
-        const math      = globalThis['@youwol/math']
-        const geom      = globalThis['@youwol/geometry']
-        const io        = globalThis['@youwol/io']
-        const extra     = globalThis['@youwol/three-extra']
-        const kepler    = globalThis['@youwol/kepler']
-        let stress    = globalThis['@alfredo-taboada/stress']
-
-        const model = {
-            bbox: false,
-            backgroundColor: '#e6e6e6'
-        }
-
-        const plines = {
-            url: [ 
-                // '/data/circles.pl'
-                // '/data/alfredo.pl'
-            ],
-            width: .002,
-            attr: 'a',
-            opacity: 1,
-            lut: 'Igeoss',
-            color: "#000000",
-            dashed: false,
-            dashScale: 1
-        }
-        
-        const surfaceInfo = {
-            attr: '',
-            surface: {
-                color: '#aaa',
-                opacity: 1
-            },
-            borders: {
-                show: false,
-                color: "#ff0000"
-            },
-            wireframe: {
-                show: false,
-                color: '#000000'
+        class Interface {
+            constructor(htmlElt) {
+                const GUI = lil.GUI
+                const parent = document.getElementById(htmlElt)
+                this.gui = new GUI({ container: parent })
+                this.gui.close()
+            }
+            loadData() {
+                document.getElementById('upload').click()
+            }
+            clearData() {
+                console.log('clearing the data')
+            }
+            run() {
+                console.log('running the code')
             }
         }
 
-        init()
-        load()
+        let stressLib = globalThis['@alfredo-taboada/stress']
 
-        test()
+        const upload = document.getElementById('upload')
+        upload.onchange = () => {
+            for (const file of upload.files) {
+                file.arrayBuffer().then(arrayBuffer => {
+                    //console.log()
+                    const buffer = (new TextDecoder()).decode(arrayBuffer).split('\n')
+                    //stressLib.decodeCSV_Angles(buffer, csv.params).forEach(data => inv.addData(data))
+                })
+            }
+        }
 
-        requestAnimationFrame( animate )
+        const interface = new Interface('menu')
+
+        const data = interface.gui.addFolder('Data')
+        data
+        data.add(interface, 'loadData').name('Load')   // Button
+        data.add(interface, 'clearData').name('Clear') // Button
+
+        const run = interface.gui.addFolder('Simulation')
+        run.add(interface, 'run').name('run')
+
     </script>
 </body>
+
 </html>
