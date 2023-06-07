@@ -670,6 +670,614 @@ __webpack_require__.r(__webpack_exports__);
 
 /***/ }),
 
+/***/ "./lib/data/CompactionShearBands_Kin.ts":
+/*!**********************************************!*\
+  !*** ./lib/data/CompactionShearBands_Kin.ts ***!
+  \**********************************************/
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   "CompactionShearBandsKin": () => (/* binding */ CompactionShearBandsKin)
+/* harmony export */ });
+/* harmony import */ var _types__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ../types */ "./lib/types/index.ts");
+/* harmony import */ var _Data__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./Data */ "./lib/data/Data.ts");
+/* harmony import */ var _types__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ./types */ "./lib/data/types.ts");
+/* harmony import */ var _utils_CompactionShearBands__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(/*! ../utils/CompactionShearBands */ "./lib/utils/CompactionShearBands.ts");
+/* harmony import */ var _utils__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(/*! ../utils */ "./lib/utils/index.ts");
+/* harmony import */ var _types_math__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(/*! ../types/math */ "./lib/types/math.ts");
+// import {
+//     Matrix3x3, Point3D, scalarProductUnitVectors,
+//     SphericalCoords, Vector3, add_Vectors,
+//     constant_x_Vector, deg2rad, spherical2unitVectorCartesian,
+//     faultStressComponents, normalizeVector, unitVectorCartesian2Spherical,
+//     normalizedCrossProduct,
+//     multiplyTensors
+// }
+//     from "../types"
+// import { Data, DataParameters } from "./Data"
+// import { StriatedPlaneProblemType } from "./StriatedPlane_Kin"
+// import { FractureStrategy } from "./types"
+// import { Fault, Direction, SensOfMovement } from "../utils/Fault"
+// // import { Fracture, FractureParams, FractureStrategy } from "./Fracture"
+
+
+// import { faultStressComponents } from "../types/mechanics"
+// import { Fault, Direction, SensOfMovement } from "../utils/Fault"
+
+
+
+
+/**
+ Compaction-Shear Bands:
+ A pair of compaction-shear bands is defined by two planes whose plane of movement is perpendicular to the intersection line between the planes.
+ The plane of movement is defined by the two normal vectors to the compaction-shear bands.
+ We make the following hypotheses concerning principal stress orientations:
+    The compressional axis Sigma 1 is located in the plane of movement and bisects the obtuse angle (>= 90°) between compaction-shear bands
+    The extensional axis Sigma 3 is located in the plane of movement and bisects the acute angle (<= 90°) between compaction-shear bands
+
+ Compaction-shear bands are defined in the input file in two consecutive lines.
+ Each line specifies all the available data for each compaction-shear band.
+
+ Several data sets defining two compaction-shear bands are considered:
+ 1) Case 1: The geometry and kinematics of the compaction-shear bands are defined, yet the rake angles are NOT defined:
+    The orientation of the principal axes are calculated from the geometry of the compaction-shear bands.
+    The intermediate axis Sigma 2 is parallel to the intersection line between the compaction-shear bands;
+    The intermediate axis Sigma 2 is perpendicular to the plane of mouvement;
+    a) Each plane is defined by a set of 3 parameters, as follows:
+        Fault strike: clockwise angle measured from the North direction [0, 360)
+        Fault dip: [0, 90]
+        Dip direction: (N, E, S, W) or a combination of two directions (NE, SE, SW, NW).
+    b) The rake angles defining the slip vectors are NOT defined
+    c) The sense of mouvement is indicated for each compaction-shear band :
+        For verification purposes, it is recommended to indicate both the dip-slip and strike-slip compoenents, when possible.
+          Dip-slip component:
+              N = Normal fault,
+              I = Inverse fault or thrust
+          Strike-slip componenet:
+              RL = Right-Lateral fault
+              LL = Left-Lateral fault
+        Sense of mouvement: N, I, RL, LL, N-RL, N-LL, I-RL, I-LL
+2) Case 2: The geometry, the striation (i.e., the rake), and the kinematics of one or both compaction-shear bands are defined.
+    This case is not considered as the striations define redundant information for constraining the stress tensor orientation.
+    Compaction-shear bands with striations can be considered separately as neoformed striated planes for which the angle <Sigma 1,n> is known
+
+
+3) Particular case:
+    If the striation is known for one of the conjugate faults, then the other plane
+    can be defined by one axis that is contained in the plane.
+    However, this case would require a special format in the input file, which is inconvenient...
+
+    @category Data
+ */
+class CompactionShearBandsKin extends _Data__WEBPACK_IMPORTED_MODULE_1__.Data {
+    constructor() {
+        super(...arguments);
+        this.nPlane = [];
+        this.nStriation1 = undefined;
+        this.nStriation2 = undefined;
+        this.pos = undefined;
+        this.problemType = _types__WEBPACK_IMPORTED_MODULE_2__.StriatedPlaneProblemType.DYNAMIC;
+        this.strategy = _types__WEBPACK_IMPORTED_MODULE_2__.FractureStrategy.ANGLE;
+        this.oriented = true;
+        this.EPS = 1e-7;
+        this.plane = [false, false];
+        // Principal directions of the data
+        this.nSigma1_Sc = undefined;
+        this.nSigma2_Sc = undefined;
+        this.nSigma3_Sc = undefined;
+        this.Crot = undefined;
+        this.csb = [undefined, undefined];
+        this.params = [undefined, undefined];
+        this.striation = [true, true];
+    }
+    nbLinkedData() {
+        return 2;
+    }
+    initialize(params) {
+        let nPlane2Neg;
+        // TODO
+        // CHeck that params.length === 2
+        for (let i = 0; i < 2; ++i) {
+            if (Number.isNaN(params[i].strike)) {
+                throw new Error('Missing strike angle for compaction-shear band ' + params[i].noPlane);
+            }
+            if (Number.isNaN(params[i].dip)) {
+                throw new Error('Missing dip angle for compaction-shear band ' + params[i].noPlane);
+            }
+            if (params[i].dip < 90 && params[i].dipDirection === undefined) {
+                throw new Error('Missing dip direction for compaction-shear band  ' + params[i].noPlane);
+            }
+            this.params[i] = {
+                noPlane: params[i].noPlane,
+                strike: params[i].strike,
+                dipDirection: (0,_utils__WEBPACK_IMPORTED_MODULE_4__.getDirectionFromString)(params[i].dipDirection),
+                dip: params[i].dip,
+                sensOfMovement: (0,_utils__WEBPACK_IMPORTED_MODULE_4__.getSensOfMovementFromString)(params[i].typeOfMovement),
+                rake: params[i].rake,
+                strikeDirection: (0,_utils__WEBPACK_IMPORTED_MODULE_4__.getDirectionFromString)(params[i].strikeDirection)
+            };
+            this.csb[i] = _utils_CompactionShearBands__WEBPACK_IMPORTED_MODULE_3__.CompactionShearBands.create(this.params[i]);
+            // compaction-shear band i is defined: (strike1, dip1, dipDirection1)
+            this.plane[i] = true;
+            // Calculate the unit vector normal to plane i: nPlane
+            this.nPlane[i] = this.csb[i].nPlane;
+        }
+        if (this.nPlane[0] === this.nPlane[1] || this.nPlane[0] === (0,_types__WEBPACK_IMPORTED_MODULE_0__.constant_x_Vector)({ k: -1, V: this.nPlane[1] })) {
+            throw new Error('The two compaction-shear bands ' + this.params[0].noPlane + ' and ' + this.params[1].noPlane + ' are identical');
+        }
+        /** this.nStriation = nStriation
+        // this.nPerpStriation = nPerpStriation
+
+        // Check orthogonality
+        // const sp = scalarProductUnitVectors({U: nPlane, V: nStriation})
+        //*if (Math.abs(sp) >this.EPS) {
+            throw new Error(`striation is not on the fault plane. Dot product gives ${sp}`)
+        } **/
+        return true;
+    }
+    check({ displ, strain, stress }) {
+        if (this.problemType === _types__WEBPACK_IMPORTED_MODULE_2__.StriatedPlaneProblemType.DYNAMIC) {
+            return stress !== undefined;
+        }
+        return displ !== undefined;
+    }
+    checkCompactionShearBands() {
+        if (this.plane[0] && this.plane[1]) {
+            // The first and second compaction-shear bands are defined (strike1, dip1 and dipDirection1) and (strike2, dip2 and dipDirection2)
+            // if (Number.isNaN(this.params[0].rake) && Number.isNaN(this.params[0].striationTrend)) {
+            //     this.striation1 = false
+            // }
+            // if (Number.isNaN(this.params2.rake) && Number.isNaN(this.params2.striationTrend)) {
+            //     this.striation2 = false
+            // }
+            // if (!this.striation1 && !this.striation2) {
+            if (true) {
+                // Case 1: general case
+                // The striations are not defined for compaction-shear bands 1 and 2
+                // In principle we have already checked that the two compaction-shear bands are different
+                // Calculate the unit vector parellel to Sigma 2, which is perpendicular to nPlane1 and nPlane2:
+                this.nSigma2_Sc = (0,_types__WEBPACK_IMPORTED_MODULE_0__.normalizedCrossProduct)({ U: this.nPlane[0], V: this.nPlane[0] });
+                // Calculate the two normalized stress axes (Sigma 1 and Sigma 3) that bisect the angles between the compaction-shear bands
+                // angle_nPlane1_nPlane2 in interval (0,PI)
+                const angle_nPlane1_nPlane2 = Math.acos((0,_types__WEBPACK_IMPORTED_MODULE_0__.scalarProductUnitVectors)({ U: this.nPlane[0], V: this.nPlane[1] }));
+                if (Math.abs(angle_nPlane1_nPlane2 - Math.PI / 2) > this.EPS) {
+                    // The compaction-shear bands are not perpendicular to each other
+                    if (angle_nPlane1_nPlane2 > Math.PI / 2) {
+                        // The angle between the 2 normals > PI/2:
+                        // Sigma 1 and Sigma 3 are located in the plane generated by nPlane1 and nPlane2 (normal unit vectors point upward)
+                        // In principle Sigma 3 bisects the acute angle (< 90°) between the compaction-shear bands
+                        // The bisecting line nSigma3_Sc is defined by the sum of normal vectors nPlane1 + nPlane2
+                        this.nSigma3_Sc = (0,_types__WEBPACK_IMPORTED_MODULE_0__.add_Vectors)({ U: this.nPlane[0], V: this.nPlane[1] });
+                        // note that nSigma3_Sc is always located in the compressional quadrant of the outward hemisphere relative to each of the fault planes
+                        // i.e., the scalar product nPlane1 . nSigma3_Sc > 0
+                        this.nSigma3_Sc = (0,_types__WEBPACK_IMPORTED_MODULE_0__.normalizeVector)(this.nSigma3_Sc);
+                        // nSigma1_Sc = nSigma3_Sc x nSigma2_Sc
+                        // The right-handed reference system is defined according to systems S' and S'' (sigma 1, sigma 3, sigma 2)
+                        this.nSigma1_Sc = (0,_types__WEBPACK_IMPORTED_MODULE_0__.normalizedCrossProduct)({ U: this.nSigma3_Sc, V: this.nSigma2_Sc });
+                    }
+                    else {
+                        // The angle between the 2 normals < PI/2:
+                        // In principle Sigma 1 bisects the obtuse angle (> 90°) between the compaction-shear bands 
+                        // The bisecting line nSigma1_Sc is defined by the sum of normal vectors nPlane1 + nPlane2
+                        this.nSigma1_Sc = (0,_types__WEBPACK_IMPORTED_MODULE_0__.add_Vectors)({ U: this.nPlane[0], V: this.nPlane[1] });
+                        this.nSigma1_Sc = (0,_types__WEBPACK_IMPORTED_MODULE_0__.normalizeVector)(this.nSigma1_Sc);
+                        // nSigma3_Sc = nSigma2_Sc x nSigma1_Sc
+                        // The right-handed reference system is defined according to systems S' and S'' (sigma 1, sigma 3, sigma 2)
+                        this.nSigma3_Sc = (0,_types__WEBPACK_IMPORTED_MODULE_0__.normalizedCrossProduct)({ U: this.nSigma2_Sc, V: this.nSigma1_Sc });
+                    }
+                    // ****** let (coordinates1.phi, coordinates1.theta) and (coordinates2.phi, coordinates2.theta) be the spherical coords
+                    // of conjugate plaes 1 and 2 in the geographic reference system: S = (X,Y,Z) = (E,N,Up)
+                    // This requires using method faultSphericalCoords in class fault
+                    // Check that the sense of mouvement is consistent with the orientation of stress axes***
+                    if (this.params[0].sensOfMovement !== 'UKN') {
+                        // The sense of movement is defined for compaction-shear band 1 (UKN = unknown)
+                        // Check consitency of movement 
+                        this.csb[0].conjugatePlaneCheckMouvement({
+                            noPlane: this.params[0].noPlane,
+                            nPlane: this.nPlane[0],
+                            coordinates: this.csb[0].fault.sphericalCoords,
+                            nStriation: this.csb[0].fault.striation,
+                            sensOfMovement: this.params[0].sens_of_movement,
+                            nSigma3_Sc: this.nSigma3_Sc,
+                            nSigma2_Sc: this.nSigma2_Sc
+                        });
+                    }
+                    if (this.params[1].sensOfMovement !== 'UKN') {
+                        // The sense of movement is defined for compaction-shear band 2
+                        // Check consitency of movement
+                        this.csb[1].conjugatePlaneCheckMouvement({
+                            noPlane: this.params[1].noPlane,
+                            nPlane: this.nPlane[1],
+                            coordinates: this.csb[1].fault.sphericalCoords,
+                            nStriation: this.csb[1].fault.striation,
+                            sensOfMovement: this.params[1].sens_of_movement,
+                            nSigma3_Sc: this.nSigma3_Sc,
+                            nSigma2_Sc: this.nSigma2_Sc
+                        });
+                    }
+                }
+                else {
+                    // The angle between the 2 normals is approximately equal to PI/2:
+                    // In this situation, the orientation of Sigma 1 and Sigma 3 can be permuted.
+                    // The sense of mouvement of at least one compaction-shear band must be known in order to define the orientation of the stress axes
+                    if (this.params[0].sensOfMovement !== 'UKN' || this.params[1].sensOfMovement !== 'UKN') {
+                        // Find orientations of Sigma 1, Sigma 2 and Sigma 3, and check for consistency of mouvement if both movements are known.
+                    }
+                    else {
+                        const msg = 'conjugate faults ' + this.params[0].noPlane + ' and ' + this.params[1].noPlane + ' are perpendicular. Please indicate type of movement for at least one plane';
+                        throw new Error(msg);
+                    }
+                }
+                // We define 2 orthonormal right-handed reference systems:
+                //      S =  (X, Y, Z ) is the geographic reference frame oriented in (East, North, Up) directions.
+                //      Sc = (Xc,Yc,Zc) is the principal stress reference frame, parallel to the stress axes obtained from the compaction-shear bands (sigma1_Sc, sigma3_Sc, sigma2_Sc);
+                // Calculate transformation matrix Crot from reference system S to Sc, such that:
+                //      Vc = Crot V
+                // where V and Vc are corresponding vectors in reference systems S and Sc
+                // Rotation tensor Crot is defined such that:
+                // lines 1, 2, and 3 are defined by unit vectors nSigma1_Sc, nSigma3_Sc, and nSigma2_Sc, in agreement with reference system Sc = (Xc,Yc,Zc)
+                this.Crot = [
+                    [this.nSigma1_Sc[0], this.nSigma1_Sc[1], this.nSigma1_Sc[2]],
+                    [this.nSigma3_Sc[0], this.nSigma3_Sc[1], this.nSigma3_Sc[2]],
+                    [this.nSigma2_Sc[0], this.nSigma2_Sc[1], this.nSigma2_Sc[2]]
+                ];
+            }
+            else {}
+        }
+        else if (this.plane[0] || this.plane[1]) {
+            // One of the two compaction-shear bands is defined while the other is not
+            // In principle the second plane can be calculated using the striation of the first plane and a line passing by the second plane
+            // However, this case is rather unusual.
+        }
+        else {
+            // The two compaction-shear bands are not defined
+            throw new Error('conjugate faults ' + this.params[0].noPlane + ' and ' + this.params[1].noPlane + ' are not defined (strike, dip and dip direction');
+        }
+    }
+    cost({ displ, strain, stress, Mrot }) {
+        if (this.problemType === _types__WEBPACK_IMPORTED_MODULE_2__.StriatedPlaneProblemType.DYNAMIC) {
+            // The cost function uses the rotation tensor Crot from reference system S to Sc, calculated in method checkCompactionShearBands
+            // The cost function for two compaction-shear bands is defined as the minimum angular rotation between system Sc and the stress tensor in system S' or S'':
+            //  S   =  (X, Y, Z ) is the geographic reference frame  oriented in (East, North, Up) directions.
+            //  S'  =  (X', Y', Z' ) is the principal reference frame chosen by the user in the interactive search phase.
+            //  S'' =  (X'', Y'', Z'' ) is the principal reference frame for a fixed node in the search grid (sigma_1, sigma_3, sigma_2)
+            // Rotation tensors Rrot and RTrot between systems S and S' are such that:
+            //  V  = RTrot V'        (RTrot is tensor Rrot transposed)
+            //  V' = Rrot  V
+            // Rotation tensors Wrot and WTrot between systems S and S'' satisfy : WTrot = RTrot DTrot, such that:
+            //  V   = WTrot V''        (WTrot is tensor Wrot transposed)
+            //  V'' = Wrot  V
+            // The cost method implements a rotation tensor termed Mrot which is equivalent to Rrot or Wrot depending on the calling functions:
+            //      Mrot = Rrot in the interactive search phase using integral curves
+            //      Mrot = Wrot in the inverse method search phase using Montecarlo (for example)
+            // The rotation tensor CFrot between systems Sc and S' (or S'') is such that: Vc = CFrot . V' (or Vc = CFrot . V''), 
+            // where CFrot = Crot . MTrot (MTrot = Mrot transposed):
+            const CFrot = (0,_types__WEBPACK_IMPORTED_MODULE_0__.multiplyTensors)({ A: this.Crot, B: (0,_types__WEBPACK_IMPORTED_MODULE_0__.transposeTensor)(Mrot) });
+            // const CFrot = multiplyTensors({A: Crot, B: WTrot})
+            // The angle of rotation associated to tensor CFrot is defined by the trace tr(CFrot), according to the relation:
+            //      tr(CFrot) = 1 + 2 cos(theta)
+            // 4 possible right-handed reference systems are considered for CFrot in order to calculate the minimum rotation angle
+            return (0,_types_math__WEBPACK_IMPORTED_MODULE_5__.minRotAngleRotationTensor)(CFrot);
+        }
+    }
+}
+
+
+/***/ }),
+
+/***/ "./lib/data/ConjugateFaults_Kin.ts":
+/*!*****************************************!*\
+  !*** ./lib/data/ConjugateFaults_Kin.ts ***!
+  \*****************************************/
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   "ConjugateFaultsKin": () => (/* binding */ ConjugateFaultsKin)
+/* harmony export */ });
+/* harmony import */ var _types__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ../types */ "./lib/types/index.ts");
+/* harmony import */ var _Data__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./Data */ "./lib/data/Data.ts");
+/* harmony import */ var _types__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ./types */ "./lib/data/types.ts");
+/* harmony import */ var _utils_ConjugateFaults__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(/*! ../utils/ConjugateFaults */ "./lib/utils/ConjugateFaults.ts");
+/* harmony import */ var _utils__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(/*! ../utils */ "./lib/utils/index.ts");
+/* harmony import */ var _types_math__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(/*! ../types/math */ "./lib/types/math.ts");
+
+
+
+
+
+
+/**
+ conjugate planes:
+ A pair of conjugate planes is defined by two planes whose plane of movement is perpendicular to the intersection line between the planes.
+ The plane of movement is defined by the two normal vectors to the fault planes.
+ We make the following hypotheses concerning principal stress orientations:
+    The compressional axis Sigma 1 is located in the plane of movement and bisects the acute angle (<= 90°) between planes
+    The extensional axis Sigma 3 is located in the plane of movement and bisects the obtuse angle (>= 90°) between planes
+
+ Conjugate fault planes are defined in the input file in two consecutive lines.
+ Each line specifies all the available data for each conjugate fault plane.
+
+ Several data sets defining two conjugate planes are considered:
+ 1) Case 1: The geometry and kinematics of the conjugate planes are defined, yet the rake angles are NOT defined
+    The orientation of the principal axes are calculated from the geometry of the conjugate fault planes.
+    The intermediate axis Sigma 2 is parallel to the intersection line between the conjugate planes;
+    The intermediate axis Sigma 2 is perpendicular to the plane of mouvement;
+    a) Each plane is defined by a set of 3 parameters, as follows:
+        Fault strike: clockwise angle measured from the North direction [0, 360)
+        Fault dip: [0, 90]
+        Dip direction: (N, E, S, W) or a combination of two directions (NE, SE, SW, NW).
+    b) The rake angles defining the slip vectors are NOT defined
+    c) The sense of mouvement is indicated for each conjugate fault plane :
+        For verification purposes, it is recommended to indicate both the dip-slip and strike-slip compoenents, when possible.
+          Dip-slip component:
+              N = Normal fault,
+              I = Inverse fault or thrust
+          Strike-slip componenet:
+              RL = Right-Lateral fault
+              LL = Left-Lateral fault
+        Sense of mouvement: N, I, RL, LL, N-RL, N-LL, I-RL, I-LL
+2) Case 2: The geometry, the striation (i.e., the rake), and the kinematics of one or both conjugate planes are defined.
+        This case is not considered as the striations define redundant information for constraining the stress tensor orientation.
+        Conjugate planes with striations can be considered separately as neoformed striated planes for which the friction angle is known
+
+3) Particular case:
+    If the striation is known for one of the conjugate faults, then the other plane
+    can be defined by one axis that is contained in the plane.
+    However, this case would require a special format in the input file, which is inconvenient...
+
+    @category Data
+ */
+class ConjugateFaultsKin extends _Data__WEBPACK_IMPORTED_MODULE_1__.Data {
+    constructor() {
+        super(...arguments);
+        this.nPlane1 = undefined;
+        this.nPlane2 = undefined;
+        this.nStriation1 = undefined;
+        this.nStriation2 = undefined;
+        this.pos = undefined;
+        this.problemType = _types__WEBPACK_IMPORTED_MODULE_2__.StriatedPlaneProblemType.DYNAMIC;
+        this.strategy = _types__WEBPACK_IMPORTED_MODULE_2__.FractureStrategy.ANGLE;
+        this.oriented = true;
+        this.EPS = 1e-7;
+        this.plane1 = undefined;
+        this.plane2 = undefined;
+        // Principal directions of the data
+        this.nSigma1_Sc = undefined;
+        this.nSigma2_Sc = undefined;
+        this.nSigma3_Sc = undefined;
+        this.Crot = undefined;
+        this.cf1 = undefined;
+        this.cf2 = undefined;
+        this.params1 = undefined;
+        this.params2 = undefined;
+        this.striation1 = false;
+        this.striation2 = false;
+    }
+    //protected nSigma1_rot: Vector3 = undefined
+    //protected nSigma3_rot: Vector3 = undefined
+    // params1 and params2 contain data defining conjugate fault planes 1 and 2
+    // we have replaced azimuth by strike
+    nbLinkedData() {
+        return 2;
+    }
+    initialize(params) {
+        let nPlane2Neg;
+        if (Number.isNaN(params[0].strike)) {
+            throw new Error('Missing strike angle for conjugate fault plane ' + params[0].noPlane);
+        }
+        if (Number.isNaN(params[0].dip)) {
+            throw new Error('Missing dip angle for conjugate fault plane ' + params[0].noPlane);
+        }
+        if (params[0].dip < 90 && params[0].dipDirection === undefined) {
+            throw new Error('Missing dip direction for conjugate fault plane ' + params[0].noPlane);
+        }
+        if (Number.isNaN(params[1].strike)) {
+            throw new Error('Missing strike angle for conjugate fault plane ' + params[1].noPlane);
+        }
+        if (Number.isNaN(params[1].dip)) {
+            throw new Error('Missing dip angle for conjugate fault plane ' + params[1].noPlane);
+        }
+        if (params[1].dip < 90 && params[1].dipDirection === undefined) {
+            throw new Error('Missing dip direction for conjugate fault plane ' + params[1].noPlane);
+        }
+        // if (this.nPlane1 === this.nPlane2 || this.nPlane1 === constant_x_Vector({k: -1, V: this.nPlane2}) ) {
+        //     throw new Error('The two conjugate planes ' + params.noPlane1 + ' and ' + params.noPlane2 + ' are identical')
+        // }
+        // Check that nPlane and nStriation are unit vectors ***
+        this.params1 = {
+            noPlane: params[0].noPlane,
+            strike: params[0].strike,
+            dipDirection: (0,_utils__WEBPACK_IMPORTED_MODULE_4__.getDirectionFromString)(params[0].dipDirection),
+            dip: params[0].dip,
+            sensOfMovement: (0,_utils__WEBPACK_IMPORTED_MODULE_4__.getSensOfMovementFromString)(params[0].typeOfMovement),
+            rake: params[0].rake,
+            strikeDirection: (0,_utils__WEBPACK_IMPORTED_MODULE_4__.getDirectionFromString)(params[0].strikeDirection)
+        };
+        this.cf1 = _utils_ConjugateFaults__WEBPACK_IMPORTED_MODULE_3__.ConjugateFaults.create(this.params1);
+        // conjugate plane 1 is defined: (strike1, dip1, dipDirection1)
+        this.plane1 = true;
+        // Calculate the unit vector normal to plane 1: nPlane1
+        this.nPlane1 = this.cf1.nPlane;
+        // -----------------------------------------
+        this.params2 = {
+            noPlane: params[1].noPlane,
+            strike: params[1].strike,
+            dipDirection: (0,_utils__WEBPACK_IMPORTED_MODULE_4__.getDirectionFromString)(params[1].dipDirection),
+            dip: params[1].dip,
+            sensOfMovement: (0,_utils__WEBPACK_IMPORTED_MODULE_4__.getSensOfMovementFromString)(params[1].typeOfMovement),
+            rake: params[1].rake,
+            strikeDirection: (0,_utils__WEBPACK_IMPORTED_MODULE_4__.getDirectionFromString)(params[1].strikeDirection)
+        };
+        this.cf2 = _utils_ConjugateFaults__WEBPACK_IMPORTED_MODULE_3__.ConjugateFaults.create(this.params2);
+        // conjugate plane 1 is defined: (strike1, dip1, dipDirection1)
+        this.plane2 = true;
+        // Calculate the unit vector normal to plane 1: nPlane1
+        this.nPlane2 = this.cf2.nPlane;
+        /** this.nStriation = nStriation
+        // this.nPerpStriation = nPerpStriation
+
+        // Check orthogonality
+        // const sp = scalarProductUnitVectors({U: nPlane, V: nStriation})
+        //*if (Math.abs(sp) >this.EPS) {
+            throw new Error(`striation is not on the fault plane. Dot product gives ${sp}`)
+        } **/
+        return true;
+    }
+    check({ displ, strain, stress }) {
+        if (this.problemType === _types__WEBPACK_IMPORTED_MODULE_2__.StriatedPlaneProblemType.DYNAMIC) {
+            return stress !== undefined;
+        }
+        return displ !== undefined;
+    }
+    checkConjugateFaults() {
+        // const f = ConjugatedFaults.create({})
+        // return f.
+        if (this.plane1 && this.plane2) {
+            // The first and second conjugate plane are defined (strike1, dip1 and dipDirection1) and (strike2, dip2 and dipDirection2)
+            if (Number.isNaN(this.params1.rake) && Number.isNaN(this.params1.striationTrend)) {
+                this.striation1 = false;
+            }
+            if (Number.isNaN(this.params2.rake) && Number.isNaN(this.params2.striationTrend)) {
+                this.striation2 = false;
+            }
+            if (!this.striation1 && !this.striation2) {
+                // Case 1: general case
+                // The striations are not defined for the conjugate planes 1 and 2
+                // In principle we have already checked that the two conjugate planes are different
+                // Calculate the unit vector parellel to Sigma 2, which is perpendicular to nPlane1 and nPlane2:
+                this.nSigma2_Sc = (0,_types__WEBPACK_IMPORTED_MODULE_0__.normalizedCrossProduct)({ U: this.nPlane1, V: this.nPlane2 });
+                // Calculate the two normalized stress axes (Sigma 1 and Sigma 3) that bisect the angles between the conjugate planes
+                // angle_nPlane1_nPlane2 in interval (0,PI)
+                const angle_nPlane1_nPlane2 = Math.acos((0,_types__WEBPACK_IMPORTED_MODULE_0__.scalarProductUnitVectors)({ U: this.nPlane1, V: this.nPlane2 }));
+                if (Math.abs(angle_nPlane1_nPlane2 - Math.PI / 2) > this.EPS) {
+                    // The conjugate planes are not perpendicular to each other
+                    if (angle_nPlane1_nPlane2 < Math.PI / 2) {
+                        // The angle between the 2 normals < PI/2:
+                        // Sigma 1 and Sigma 3 are located in the plane generated by nPlane1 and nPlane2  (normal unit vectors point upward)
+                        // In principle Sigma 3 bisects the obtuse angle (> 90°) between the conjugate planes
+                        // The bisecting line nSigma3_Sc is defined by the sum of normal vectors nPlane1 + nPlane2
+                        this.nSigma3_Sc = (0,_types__WEBPACK_IMPORTED_MODULE_0__.add_Vectors)({ U: this.nPlane1, V: this.nPlane2 });
+                        // note that nSigma3_Sc is always located in the compressional quadrant of the outward hemisphere relative to each of the fault planes
+                        // i.e., the scalar product nPlane1 . nSigma3_Sc > 0
+                        this.nSigma3_Sc = (0,_types__WEBPACK_IMPORTED_MODULE_0__.normalizeVector)(this.nSigma3_Sc);
+                        // nSigma1_Sc = nSigma3_Sc x nSigma2_Sc
+                        // The right-handed reference system is defined according to systems S' and S'' (sigma 1, sigma 3, sigma 2)
+                        this.nSigma1_Sc = (0,_types__WEBPACK_IMPORTED_MODULE_0__.normalizedCrossProduct)({ U: this.nSigma3_Sc, V: this.nSigma2_Sc });
+                    }
+                    else {
+                        // The angle between the 2 normals > PI/2:
+                        // In principle Sigma 1 bisects the acute angle (< 90°) between the conjugate planes 
+                        // The bisecting line nSigma1_Sc is defined by the sum of normal vectors nPlane1 + nPlane2
+                        this.nSigma1_Sc = (0,_types__WEBPACK_IMPORTED_MODULE_0__.add_Vectors)({ U: this.nPlane1, V: this.nPlane2 });
+                        this.nSigma1_Sc = (0,_types__WEBPACK_IMPORTED_MODULE_0__.normalizeVector)(this.nSigma1_Sc);
+                        // nSigma3_Sc = nSigma2_Sc x nSigma1_Sc
+                        // The right-handed reference system is defined according to systems S' and S'' (sigma 1, sigma 3, sigma 2)
+                        this.nSigma3_Sc = (0,_types__WEBPACK_IMPORTED_MODULE_0__.normalizedCrossProduct)({ U: this.nSigma2_Sc, V: this.nSigma1_Sc });
+                    }
+                    // ****** let (coordinates1.phi, coordinates1.theta) and (coordinates2.phi, coordinates2.theta) be the spherical coords
+                    // of conjugate plaes 1 and 2 in the geographic reference system: S = (X,Y,Z) = (E,N,Up)
+                    // This requires using method faultSphericalCoords in class fault
+                    // Check that the sense of mouvement is consistent with the orientation of stress axes***
+                    if (this.params1.sensOfMovement !== 'UKN') {
+                        // The sense of movement is defined for conjugate plane 1 (UKN = unknown)
+                        // Check consitency of movement 
+                        this.cf1.conjugatePlaneCheckMouvement({
+                            noPlane: this.params1.noPlane,
+                            nPlane: this.nPlane1,
+                            coordinates: this.cf1.fault.sphericalCoords,
+                            nStriation: this.cf1.fault.striation,
+                            sensOfMovement: this.params1.sens_of_movement,
+                            nSigma3_Sc: this.nSigma3_Sc,
+                            nSigma2_Sc: this.nSigma2_Sc
+                        });
+                    }
+                    if (this.params2.sensOfMovement !== 'UKN') {
+                        // The sense of movement is defined for conjugate plane 2
+                        // Check consitency of movement
+                        this.cf2.conjugatePlaneCheckMouvement({
+                            noPlane: this.params2.noPlane,
+                            nPlane: this.nPlane2,
+                            coordinates: this.cf2.fault.sphericalCoords,
+                            nStriation: this.cf2.fault.striation,
+                            sensOfMovement: this.params2.sens_of_movement,
+                            nSigma3_Sc: this.nSigma3_Sc,
+                            nSigma2_Sc: this.nSigma2_Sc
+                        });
+                    }
+                }
+                else {
+                    // The angle between the 2 normals is approximately equal to PI/2:
+                    // In this situation, the orientation of Sigma 1 and Sigma 3 can be permuted.
+                    // The sense of mouvement of at least one conjugate plane must be known in order to define the orientation of the stress axes
+                    if (this.params1.sensOfMovement !== 'UKN' || this.params2.sensOfMovement !== 'UKN') {
+                        // Find orientations of Sigma 1, Sigma 2 and Sigma 3, and check for consistency of mouvement if both movements are known.
+                    }
+                    else {
+                        const msg = 'conjugate faults ' + this.params1.noPlane + ' and ' + this.params2.noPlane + ' are perpendicular. Please indicate type of movement for at least one plane';
+                        throw new Error(msg);
+                    }
+                }
+                // We define 2 orthonormal right-handed reference systems:
+                //      S =  (X, Y, Z ) is the geographic reference frame oriented in (East, North, Up) directions.
+                //      Sc = (Xc,Yc,Zc) is the principal stress reference frame, parallel to the stress axes obtained form the conjugate faults (sigma1_Sc, sigma3_Sc, sigma2_Sc);
+                // Calculate transformation matrix Crot from reference system S to Sc, such that:
+                //      Vc = Crot V
+                // where V and Vc are corresponding vectors in reference systems S and Sc
+                // Rotation tensor Crot is defined such that:
+                // lines 1, 2, and 3 are defined by unit vectors nSigma1_Sc, nSigma3_Sc, and nSigma2_Sc, in agreement with reference system Sc = (Xc,Yc,Zc)
+                this.Crot = [
+                    [this.nSigma1_Sc[0], this.nSigma1_Sc[1], this.nSigma1_Sc[2]],
+                    [this.nSigma3_Sc[0], this.nSigma3_Sc[1], this.nSigma3_Sc[2]],
+                    [this.nSigma2_Sc[0], this.nSigma2_Sc[1], this.nSigma2_Sc[2]]
+                ];
+            }
+            else {
+                // The striations on one are both conjugate planes are defined (rake, strike direction, and type of movement)
+                // 
+            }
+        }
+        else if (this.plane1 || this.plane2) {
+            // One of the two conjugate planes is defined while the other is not
+            // In principle the second plane can be calculated using the striation of the first plane and a line passing by the second plane
+            // However, this case is rather unusual.
+        }
+        else {
+            // The two conjugate planes are not defined
+            throw new Error('conjugate faults ' + this.params1.noPlane + ' and ' + this.params2.noPlane + ' are not defined (strike, dip and dip direction');
+        }
+    }
+    cost({ displ, strain, stress, Mrot }) {
+        if (this.problemType === _types__WEBPACK_IMPORTED_MODULE_2__.StriatedPlaneProblemType.DYNAMIC) {
+            // The cost function uses the rotation tensor Crot from reference system S to Sc, calculated in method checkCompactionShearBands
+            // The cost function for two conjugate faults is defined as the minimum angular rotation between system Sc and the stress tensor in system S' or S'':
+            //  S   =  (X, Y, Z ) is the geographic reference frame  oriented in (East, North, Up) directions.
+            //  S'  =  (X', Y', Z' ) is the principal reference frame chosen by the user in the interactive search phase.
+            //  S'' =  (X'', Y'', Z'' ) is the principal reference frame for a fixed node in the search grid (sigma_1, sigma_3, sigma_2)
+            // Rotation tensors Rrot and RTrot between systems S and S' are such that:
+            //  V  = RTrot V'        (RTrot is tensor Rrot transposed)
+            //  V' = Rrot  V
+            // Rotation tensors Wrot and WTrot between systems S and S'' satisfy : WTrot = RTrot DTrot, such that:
+            //  V   = WTrot V''        (WTrot is tensor Wrot transposed)
+            //  V'' = Wrot  V
+            // The cost method implements a rotation tensor termed Mrot which is equivalent to Rrot or Wrot depending on the calling functions:
+            //      Mrot = Rrot in the interactive search phase using integral curves
+            //      Mrot = Wrot in the inverse method search phase using Montecarlo (for example)
+            // The rotation tensor CFrot between systems Sc and S' (or S'') is such that: Vc = CFrot . V' (or Vc = CFrot . V''), 
+            // where CFrot = Crot . MTrot (MTrot = Mrot transposed):
+            const CFrot = (0,_types__WEBPACK_IMPORTED_MODULE_0__.multiplyTensors)({ A: this.Crot, B: (0,_types__WEBPACK_IMPORTED_MODULE_0__.transposeTensor)(Mrot) });
+            // The angle of rotation associated to tensor CFrot is defined by the trace tr(CFrot), according to the relation:
+            //      tr(CFrot) = 1 + 2 cos(theta)
+            // 4 possible right-handed reference systems are considered for CFrot in order to calculate the minimum rotation angle
+            return (0,_types_math__WEBPACK_IMPORTED_MODULE_5__.minRotAngleRotationTensor)(CFrot);
+        }
+    }
+}
+
+
+/***/ }),
+
 /***/ "./lib/data/Data.ts":
 /*!**************************!*\
   !*** ./lib/data/Data.ts ***!
@@ -680,10 +1288,6 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
 /* harmony export */   "Data": () => (/* binding */ Data)
 /* harmony export */ });
-// export enum UserSpace {
-//     INTERACTIVE,
-//     INVERSE
-// }
 /**
  * @brief A Data represents one and only one measure
  * @category Data
@@ -703,14 +1307,14 @@ class Data {
     get active() {
         return this.active_;
     }
-    // set userSpace(u: UserSpace) {
-    //     this.userSpace_ = u
-    // }
-    // get userSpace() {
-    //     return this.userSpace_
-    // }
+    description() {
+        return undefined;
+    }
     setOptions(options) {
         return false;
+    }
+    nbLinkedData() {
+        return 1;
     }
     /**
      * After stress inersion, get the inered data orientation/magnitude/etc for this specific Data
@@ -719,6 +1323,155 @@ class Data {
         return undefined;
     }
 }
+
+
+/***/ }),
+
+/***/ "./lib/data/DataDescription.ts":
+/*!*************************************!*\
+  !*** ./lib/data/DataDescription.ts ***!
+  \*************************************/
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   "DataDescription": () => (/* binding */ DataDescription)
+/* harmony export */ });
+/* harmony import */ var _utils_Fault__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ../utils/Fault */ "./lib/utils/Fault.ts");
+/* harmony import */ var _Factory__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./Factory */ "./lib/data/Factory.ts");
+
+
+const DataDescription = {
+    names: [
+        'dataType',
+        'strike', 'dip', 'dipDirection',
+        'rake', 'strikeDirection', 'striationTrend', 'typeOfMovement',
+        'lineTrend', 'linePlunge',
+        'deformationPhase', 'relatedWeight',
+        'minFrictionAngle', 'maxFrictionAngle', 'minAngleS1n', 'maxAngleS1n' // 12 13 14 15
+    ],
+    type: [
+        (v) => v,
+        (v) => parseFloat(v),
+        (v) => parseFloat(v),
+        (v) => v,
+        (v) => parseFloat(v),
+        (v) => v,
+        (v) => parseFloat(v),
+        (v) => v,
+        (v) => parseFloat(v),
+        (v) => parseFloat(v),
+        (v) => parseInt(v),
+        (v) => parseFloat(v),
+        (v) => parseFloat(v),
+        (v) => parseFloat(v),
+        (v) => parseFloat(v),
+        (v) => parseFloat(v),
+    ],
+    ranges: [
+        (dataType) => _Factory__WEBPACK_IMPORTED_MODULE_1__.DataFactory.exists(dataType),
+        (v) => {
+            // Strike
+            const vv = DataDescription.type[1](v);
+            return vv >= 0 && vv < 360;
+        },
+        (v) => {
+            // Dip
+            const vv = DataDescription.type[2](v);
+            return vv >= 0 && vv <= 90;
+        },
+        (v) => (0,_utils_Fault__WEBPACK_IMPORTED_MODULE_0__.directionExists)(v),
+        (v) => {
+            const vv = DataDescription.type[4](v);
+            return vv >= 0 && vv <= 90;
+        },
+        (v) => (0,_utils_Fault__WEBPACK_IMPORTED_MODULE_0__.getDirectionFromString)(v),
+        (v) => {
+            const vv = DataDescription.type[6](v);
+            return vv >= 0 && vv < 360;
+        },
+        (v) => (0,_utils_Fault__WEBPACK_IMPORTED_MODULE_0__.getSensOfMovementFromString)(v),
+        (v) => {
+            const vv = DataDescription.type[8](v);
+            return vv >= 0 && vv < 360;
+        },
+        (v) => {
+            const vv = DataDescription.type[9](v);
+            return vv >= 0 && vv <= 90;
+        },
+        (v) => {
+            const vv = DataDescription.type[10](v);
+            return vv > 0;
+        },
+        (v) => {
+            const vv = DataDescription.type[11](v);
+            return vv >= 0;
+        },
+        (v) => {
+            const vv = DataDescription.type[12](v);
+            return vv >= 0 && vv < 90;
+        },
+        (v) => {
+            const vv = DataDescription.type[13](v);
+            return vv >= DataDescription.ranges[12] && vv < 90;
+        },
+        (v) => {
+            const vv = DataDescription.type[14](v);
+            return vv > 0 && vv < 90;
+        },
+        (v) => {
+            const vv = DataDescription.type[15](v);
+            return vv >= DataDescription.ranges[14] && vv < 90;
+        }
+    ],
+    check({ data, lines, lineNumber }) {
+        const result = { status: true, messages: [] };
+        const params = [];
+        for (let i = 0; i < lines.length; ++i) {
+            const line = lines[i];
+            const toks = line.split(';').map(s => s.replace(',', '.'));
+            if (toks.length !== 16) {
+                // TODO: Ben va te faire voir
+                throw new Error(`Bad number of columns. Should be 16 and got ${toks.length}`);
+            }
+            if (this.ranges[0](toks[0]) === false) {
+                throw new Error(`Data type named "${toks[0]}" is unknown at line ${lineNumber + i}`);
+            }
+            const param = {
+                dataType: toks[0]
+            };
+            const desc = data.description();
+            desc.mandatory.forEach(index => {
+                if (this.ranges[index](toks[index]) === false) {
+                    result.status = false;
+                    result.messages.push(`for data ${_Factory__WEBPACK_IMPORTED_MODULE_1__.DataFactory.name(data)}, parameter ${this.names[index]} is out of range`);
+                }
+                else {
+                    param[this.names[index]] = this.type[index](toks[index]);
+                }
+            });
+            params.push(param);
+        }
+        if (result.status === true) {
+            // Initialize the data since everything went well
+            console.log(params);
+            data.initialize(params);
+        }
+        return result;
+    }
+};
+
+
+/***/ }),
+
+/***/ "./lib/data/DataParameters.ts":
+/*!************************************!*\
+  !*** ./lib/data/DataParameters.ts ***!
+  \************************************/
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
+
+__webpack_require__.r(__webpack_exports__);
+
 
 
 /***/ }),
@@ -739,6 +1492,8 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony import */ var _utils_fromAnglesToNormal__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ../utils/fromAnglesToNormal */ "./lib/utils/fromAnglesToNormal.ts");
 /* harmony import */ var _Data__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(/*! ./Data */ "./lib/data/Data.ts");
 /* harmony import */ var _types__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(/*! ./types */ "./lib/data/types.ts");
+/* harmony import */ var _utils__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(/*! ../utils */ "./lib/utils/index.ts");
+
 
 
 
@@ -755,19 +1510,28 @@ class ExtensionFracture extends _Data__WEBPACK_IMPORTED_MODULE_3__.Data {
         this.strategy = _types__WEBPACK_IMPORTED_MODULE_4__.FractureStrategy.ANGLE;
         this.position = undefined;
     }
+    description() {
+        return {
+            mandatory: [1, 2, 3],
+            optional: [10, 11]
+        };
+    }
     initialize(params) {
-        if (Number.isNaN(params.azimuth)) {
+        if (Number.isNaN(params[0].strike)) {
             throw new Error('Missing azimuth angle for ExtensionFracture');
         }
-        if (Number.isNaN(params.dip)) {
+        if (Number.isNaN(params[0].dip)) {
             throw new Error('Missing dip angle for ExtensionFracture');
         }
-        if (params.dip < 90 && params.dipDirection === undefined) {
+        if (params[0].dip < 90 && params[0].dipDirection === undefined) {
             throw new Error('Missing dip direction for ExtensionFracture');
         }
         // Convert into normal
-        this.normal = (0,_utils_fromAnglesToNormal__WEBPACK_IMPORTED_MODULE_2__.fromAnglesToNormal)({ strike: params.azimuth, dip: params.dip, dipDirection: params.dipDirection });
-        //console.log(this.normal)
+        this.normal = (0,_utils_fromAnglesToNormal__WEBPACK_IMPORTED_MODULE_2__.fromAnglesToNormal)({
+            strike: params[0].strike,
+            dip: params[0].dip,
+            dipDirection: (0,_utils__WEBPACK_IMPORTED_MODULE_5__.getDirectionFromString)(params[0].dipDirection)
+        });
         return true;
     }
     check({ displ, strain, stress }) {
@@ -806,13 +1570,11 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */   "DataFactory": () => (/* binding */ DataFactory)
 /* harmony export */ });
 /* harmony import */ var _ExtensionFracture__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./ExtensionFracture */ "./lib/data/ExtensionFracture.ts");
-/* harmony import */ var _FocalMechanism_Kin__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./FocalMechanism_Kin */ "./lib/data/FocalMechanism_Kin.ts");
+/* harmony import */ var _StriatedPlane_Kin__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./StriatedPlane_Kin */ "./lib/data/StriatedPlane_Kin.ts");
 /* harmony import */ var _StriatedPlane_Friction1__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ./StriatedPlane_Friction1 */ "./lib/data/StriatedPlane_Friction1.ts");
 /* harmony import */ var _StriatedPlane_Friction2__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(/*! ./StriatedPlane_Friction2 */ "./lib/data/StriatedPlane_Friction2.ts");
-/* harmony import */ var _StriatedPlane_Kin__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(/*! ./StriatedPlane_Kin */ "./lib/data/StriatedPlane_Kin.ts");
-/* harmony import */ var _StyloliteInterface__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(/*! ./StyloliteInterface */ "./lib/data/StyloliteInterface.ts");
-/* harmony import */ var _StyloliteTeeth__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(/*! ./StyloliteTeeth */ "./lib/data/StyloliteTeeth.ts");
-
+/* harmony import */ var _CompactionShearBands_Kin__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(/*! ./CompactionShearBands_Kin */ "./lib/data/CompactionShearBands_Kin.ts");
+/* harmony import */ var _ConjugateFaults_Kin__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(/*! ./ConjugateFaults_Kin */ "./lib/data/ConjugateFaults_Kin.ts");
 
 
 
@@ -839,326 +1601,16 @@ var DataFactory;
     DataFactory.names = () => {
         return Array.from(map_.keys());
     };
+    DataFactory.name = (data) => {
+        return data.constructor.name;
+    };
 })(DataFactory || (DataFactory = {}));
-DataFactory.bind(_StriatedPlane_Kin__WEBPACK_IMPORTED_MODULE_4__.StriatedPlaneKin, 'Striated Plane');
+DataFactory.bind(_ExtensionFracture__WEBPACK_IMPORTED_MODULE_0__.ExtensionFracture, 'Extension Fracture');
+DataFactory.bind(_StriatedPlane_Kin__WEBPACK_IMPORTED_MODULE_1__.StriatedPlaneKin, 'Striated Plane');
 DataFactory.bind(_StriatedPlane_Friction1__WEBPACK_IMPORTED_MODULE_2__.StriatedPlaneFriction1, 'Striated Plane Friction1');
 DataFactory.bind(_StriatedPlane_Friction2__WEBPACK_IMPORTED_MODULE_3__.StriatedPlaneFriction2, 'Striated Plane Friction2');
-DataFactory.bind(_ExtensionFracture__WEBPACK_IMPORTED_MODULE_0__.ExtensionFracture, 'Extension Fracture');
-DataFactory.bind(_StyloliteInterface__WEBPACK_IMPORTED_MODULE_5__.StyloliteInterface, 'Stylolite Interface');
-DataFactory.bind(_StyloliteTeeth__WEBPACK_IMPORTED_MODULE_6__.StyloliteTeeth, 'Stylolite Teeth');
-DataFactory.bind(_FocalMechanism_Kin__WEBPACK_IMPORTED_MODULE_1__.FocalMechanismKin, 'Focal Mechanism');
-
-
-/***/ }),
-
-/***/ "./lib/data/FocalMechanism_Kin.ts":
-/*!****************************************!*\
-  !*** ./lib/data/FocalMechanism_Kin.ts ***!
-  \****************************************/
-/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
-
-__webpack_require__.r(__webpack_exports__);
-/* harmony export */ __webpack_require__.d(__webpack_exports__, {
-/* harmony export */   "FocalMechanismKin": () => (/* binding */ FocalMechanismKin)
-/* harmony export */ });
-/* harmony import */ var _types__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ../types */ "./lib/types/index.ts");
-/* harmony import */ var _Data__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./Data */ "./lib/data/Data.ts");
-/* harmony import */ var _StriatedPlane_Kin__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ./StriatedPlane_Kin */ "./lib/data/StriatedPlane_Kin.ts");
-/* harmony import */ var _types__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(/*! ./types */ "./lib/data/types.ts");
-
-
-
-
-// import { Fracture, FractureParams, FractureStrategy } from "./Fracture"
-/**
- Focal Mechanisms
-    Each nodal plane is defined by a set of 3 parameters as follows:
-        Strike: clockwise angle measured from the North direction [0, 360)
-        Dip: inclination of the nodal plane relative to the horizontal [0, 90].
-            The dip direction is located to the left of the strike such that the cross product of unit vectors :
-            normal = dip X strike
-        Rake: Angle defining the slip vector indicating the movement of the top block relative to the bottom block
-            (i.e., the top block is located in the direction of the normal vector)
-            The rake is measured in the anticlockwise direction from the strike [-180,180]
-
-    This function calculates the unit vectors perpendicular to the nodal planes in reference system:
-        S = (X,Y,Z) = (E,N,Up)
-    Vectors normal to nodal planes are defined in the upper hemisphere.
-    The unit vectors indicating slip movement ar claculated from the rake angles.
-
-    @category Data
- */
-class FocalMechanismKin extends _Data__WEBPACK_IMPORTED_MODULE_1__.Data {
-    constructor() {
-        super(...arguments);
-        // Unit vectors perpendicular to nodal planes
-        this.nNodalPlane1 = [0, 0, 0];
-        this.nNodalPlane2 = [0, 0, 0];
-        // Spherical coords defining unit vectors perpendicular to nodal planes
-        this.SpheCoords_nNodalPlane1 = new _types__WEBPACK_IMPORTED_MODULE_0__.SphericalCoords();
-        this.SpheCoords_nNodalPlane2 = new _types__WEBPACK_IMPORTED_MODULE_0__.SphericalCoords();
-        // Unit vectors pointing in the rake direction (i.e., slip direction)
-        this.nRake1 = [0, 0, 0];
-        this.nRake2 = [0, 0, 0];
-        this.nodalPlane2 = false;
-        this.strikeNodalPlane1 = 0;
-        this.dipNodalPlane1 = 0;
-        this.rakeNodalPlane1 = 0;
-        this.strikeNodalPlane2 = 0;
-        this.dipNodalPlane2 = 0;
-        this.rakeNodalPlane2 = 0;
-        this.problemType = _StriatedPlane_Kin__WEBPACK_IMPORTED_MODULE_2__.StriatedPlaneProblemType.DYNAMIC;
-        this.strategy = _types__WEBPACK_IMPORTED_MODULE_3__.FractureStrategy.ANGLE;
-        this.position = undefined;
-    }
-    initialize(params) {
-        if (Number.isNaN(params.strikeNodalPlane)) {
-            throw new Error('Missing trend angle for nodal plane No.1');
-        }
-        if (Number.isNaN(params.dipNodalPlane1)) {
-            throw new Error('Missing dip angle for  nodal plane No.1');
-        }
-        if (Number.isNaN(params.rakeNodalPlane1)) {
-            throw new Error('Missing dip angle for  nodal plane No.1');
-        }
-        const a1 = this.nodalPlaneAngles2unitVectors({
-            strikeNodalPlane: this.strikeNodalPlane1,
-            dipNodalPlane: this.dipNodalPlane1,
-            rakeNodalPlane: this.rakeNodalPlane1
-        });
-        this.nNodalPlane1 = a1.nNodalPlane;
-        this.SpheCoords_nNodalPlane1 = a1.SpheCoords_nNodalPlane;
-        this.nRake1 = a1.nRake;
-        if (this.nodalPlane2) {
-            // The strike, dip and rake of nodal plane No 2 are optionnal. 
-            // If they are specified in the focal mechanism data file (i.e. nodalPlane2 = true ) 
-            // then we calculate unit vectors for stress analysis
-            const a2 = this.nodalPlaneAngles2unitVectors({
-                strikeNodalPlane: this.strikeNodalPlane2,
-                dipNodalPlane: this.dipNodalPlane2,
-                rakeNodalPlane: this.rakeNodalPlane2
-            });
-            this.nNodalPlane2 = a2.nNodalPlane;
-            this.SpheCoords_nNodalPlane2 = a2.SpheCoords_nNodalPlane;
-            this.nRake2 = a2.nRake;
-        }
-        else {
-            // The strike, dip and rake of nodal plane No 2 are not specified in the focal mechanism data file 
-            // (i.e. nodalPlane2 = false ) 
-            // The unit vectors for stress analysis are calculated from vectors for nodal plane No 1.
-            if (this.nRake1[2] >= 0) {
-                // nRake1 is in the upper hemisphere, i.e., Nodal plane 1 does not have a normal component.
-                // The normal nNodalPlane2 is defined by the slip vector nRake1
-                this.nNodalPlane2 = this.nRake1;
-                // The slip vector nRake2  is defined by the normal nNodalPlane1
-                this.nRake2 = this.nNodalPlane1;
-            }
-            else {
-                // nRake1 is in the lower hemisphere, i.e., Nodal plane 1 has a normal component.
-                // The normal nNodalPlane2 (pointing upward) is defined by the negative slip vector -nRake1
-                this.nNodalPlane2 = (0,_types__WEBPACK_IMPORTED_MODULE_0__.constant_x_Vector)({ k: -1, V: this.nRake1 });
-                // The slip vector nRake2  is defined by the negative of the normal nNodalPlane1
-                this.nRake2 = (0,_types__WEBPACK_IMPORTED_MODULE_0__.constant_x_Vector)({ k: -1, V: this.nNodalPlane1 });
-                // Calculate the spherical coordinates of the unit normal vector nNodalPlane2
-                this.SpheCoords_nNodalPlane2 = (0,_types__WEBPACK_IMPORTED_MODULE_0__.unitVectorCartesian2Spherical)(this.nNodalPlane2);
-            }
-        }
-        return true;
-    }
-    check({ displ, strain, stress }) {
-        return stress !== undefined;
-    }
-    cost({ displ, strain, stress }) {
-        const c1 = this._cost(stress, true);
-        const c2 = this._cost(stress, false);
-        return Math.min(c1, c2);
-    }
-    _cost(stress, firstPlane) {
-        let nNodalPlane = undefined;
-        let nRake = undefined;
-        if (firstPlane) {
-            nNodalPlane = this.nNodalPlane1;
-            nRake = this.nRake1;
-        }
-        else {
-            nNodalPlane = this.nNodalPlane2;
-            nRake = this.nRake2;
-        }
-        if (this.problemType === _StriatedPlane_Kin__WEBPACK_IMPORTED_MODULE_2__.StriatedPlaneProblemType.DYNAMIC) {
-            // For the first implementation, use the W&B hyp.
-            // let d = tensor_x_Vector({T: stress, V: this.nNodalPlane1}) // Cauchy
-            // d = normalizeVector(d)
-            // Calculate shear stress parameters
-            // Calculate the magnitude of the shear stress vector in reference system S
-            const { shearStress, normalStress, shearStressMag } = (0,_types__WEBPACK_IMPORTED_MODULE_0__.faultStressComponents)({ stressTensor: stress, normal: nNodalPlane });
-            let cosAngularDifStriae = 0;
-            if (shearStressMag > 0) { // shearStressMag > Epsilon would be more realistic ***
-                // nShearStress = unit vector parallel to the shear stress (i.e. representing the calculated striation)
-                let nShearStress = (0,_types__WEBPACK_IMPORTED_MODULE_0__.normalizeVector)(shearStress, shearStressMag);
-                // The angular difference is calculated using the scalar product: 
-                // nShearStress . nStriation = |nShearStress| |nStriation| cos(angularDifStriae) = 1 . 1 . cos(angularDifStriae)
-                // cosAngularDifStriae = cos(angular difference between calculated and measured striae)
-                cosAngularDifStriae = (0,_types__WEBPACK_IMPORTED_MODULE_0__.scalarProductUnitVectors)({ U: nShearStress, V: nRake });
-            }
-            else {
-                // The calculated shear stress is zero (i.e., the fault plane is parallel to a principal stress)
-                // In such situation we may consider that the calculated striation can have any direction.
-                // Nevertheless, the plane should not display striations as the shear stress is zero.
-                // Thus, in principle the plane is not compatible with the stress tensor, and it should be eliminated from the analysis
-                // In suchh case, the angular difference is taken as PI
-                cosAngularDifStriae = -1;
-            }
-            if (this.strategy === _types__WEBPACK_IMPORTED_MODULE_3__.FractureStrategy.ANGLE) {
-                // The misfit is defined by the angular difference (in radians) between measured and calculated striae
-                return Math.acos(cosAngularDifStriae);
-            }
-            else {
-                // The misfit is defined by the the cosine of the angular difference between measured and calculated striae
-                return 0.5 - cosAngularDifStriae / 2;
-            }
-        }
-        throw new Error('Kinematic not yet available');
-    }
-    nodalPlaneAngles2unitVectors({ strikeNodalPlane, dipNodalPlane, rakeNodalPlane }) {
-        // nNodalPlane = Normal vector to nodal plane pointing upward defined in the geographic reference system: S = (X,Y,Z)
-        // (phi,theta) : spherical coordinate angles defining the unit vector perpendicular to the fault plane (pointing upward)
-        //            in the geographic reference system: S = (X,Y,Z) = (E,N,Up)
-        // phi : azimuthal angle in interval [0, 2 PI), measured anticlockwise from the X axis (East direction) in reference system S
-        // theta: colatitude or polar angle in interval [0, PI/2], measured downward from the zenith (upward direction)Data
-        let SpheCoords_nNodalPlane;
-        let SpheCoordsStrike;
-        let SpheCoordsDipNeg;
-        let nNodalPlane;
-        let nStrike;
-        let nDipNeg;
-        let nRake;
-        // The polar angle (or colatitude) theta of normal1 is calculated in radians from the dip of the nodal plane:
-        SpheCoords_nNodalPlane.theta = (0,_types__WEBPACK_IMPORTED_MODULE_0__.deg2rad)(dipNodalPlane);
-        // The azimuthal angle of normal1 is calculated in radians from the trend of the nodal plane :
-        //      (strikeNodalPlane + PI/2) + phi = PI / 2 
-        // This relation gives  9 PI/4 < phi <= 0 
-        SpheCoords_nNodalPlane.phi = (0,_types__WEBPACK_IMPORTED_MODULE_0__.deg2rad)(-strikeNodalPlane);
-        // Calculate phi >= 0 :
-        SpheCoords_nNodalPlane.phi = SpheCoords_nNodalPlane.phi + 2 * Math.PI;
-        // nNodalPlane is defined by angles (phi, theta) in spherical SpheCoords_nNodalPlane.
-        nNodalPlane = (0,_types__WEBPACK_IMPORTED_MODULE_0__.spherical2unitVectorCartesian)(SpheCoords_nNodalPlane);
-        // nStrike1 is the unit vector pointing in the strike direction of nodal plane
-        // The spherical coords (phi,theta) defining strike1 are calculated:
-        SpheCoordsStrike.phi = Math.PI / 2 - (0,_types__WEBPACK_IMPORTED_MODULE_0__.deg2rad)(strikeNodalPlane);
-        if (strikeNodalPlane > 90) {
-            SpheCoordsStrike.phi = SpheCoordsStrike.phi + 2 * Math.PI;
-        }
-        SpheCoordsStrike.theta = 0;
-        nStrike = (0,_types__WEBPACK_IMPORTED_MODULE_0__.spherical2unitVectorCartesian)(SpheCoordsStrike);
-        // nDipNeg is the unit vector pointing in the opposite (negative) direction of the nodal plane's dip
-        // The spherical coords (phi,theta) defining nDipNeg are calculated: 
-        // phi is shifted by an angle of PI realtive to the nodal plane normal, and is located in interval [0,2PI]
-        if (SpheCoords_nNodalPlane.phi < Math.PI) {
-            // The azimuthal angle of nDipNeg is oriented at an angle of PI relative to the normal vector
-            SpheCoordsDipNeg.phi = SpheCoords_nNodalPlane.phi + Math.PI;
-        }
-        else {
-            SpheCoordsDipNeg.phi = SpheCoords_nNodalPlane.phi - Math.PI;
-        }
-        // The polar angle of nDipNeg is such that : SpheCoords_nNodalPlane.theta + SpheCoordsDipNeg.theta = PI/2
-        SpheCoordsDipNeg.theta = Math.PI / 2 - SpheCoords_nNodalPlane.theta;
-        nDipNeg = (0,_types__WEBPACK_IMPORTED_MODULE_0__.spherical2unitVectorCartesian)(SpheCoordsDipNeg);
-        let rake = (0,_types__WEBPACK_IMPORTED_MODULE_0__.deg2rad)(rakeNodalPlane);
-        let kStrike = Math.cos(rake);
-        let kDipNeg = Math.sin(rake);
-        // nRake is the unit vector pointing in the direction of the rake of nodal plane
-        //  in other words, nRake points in the slip direction (i.e., equivalent to the fault striation)
-        nRake = (0,_types__WEBPACK_IMPORTED_MODULE_0__.add_Vectors)({ U: (0,_types__WEBPACK_IMPORTED_MODULE_0__.constant_x_Vector)({ k: kStrike, V: nStrike }), V: (0,_types__WEBPACK_IMPORTED_MODULE_0__.constant_x_Vector)({ k: kDipNeg, V: nDipNeg }) });
-        return {
-            nNodalPlane,
-            SpheCoords_nNodalPlane,
-            nRake
-        };
-    }
-}
-
-
-/***/ }),
-
-/***/ "./lib/data/SecondaryFault.ts":
-/*!************************************!*\
-  !*** ./lib/data/SecondaryFault.ts ***!
-  \************************************/
-/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
-
-__webpack_require__.r(__webpack_exports__);
-/* harmony export */ __webpack_require__.d(__webpack_exports__, {
-/* harmony export */   "SecondaryFault": () => (/* binding */ SecondaryFault),
-/* harmony export */   "SecondaryFaultCostType": () => (/* binding */ SecondaryFaultCostType)
-/* harmony export */ });
-/* harmony import */ var _Data__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./Data */ "./lib/data/Data.ts");
-
-//
-// Nom "SecondaryFault" à préciser !
-//
-/**
- * @category Data
- */
-var SecondaryFaultCostType;
-(function (SecondaryFaultCostType) {
-    SecondaryFaultCostType[SecondaryFaultCostType["MIN"] = 0] = "MIN";
-    SecondaryFaultCostType[SecondaryFaultCostType["RAND"] = 1] = "RAND";
-    SecondaryFaultCostType[SecondaryFaultCostType["FIRST"] = 2] = "FIRST";
-    SecondaryFaultCostType[SecondaryFaultCostType["SECOND"] = 3] = "SECOND";
-})(SecondaryFaultCostType || (SecondaryFaultCostType = {}));
-/**
- * @category Data
- */
-class SecondaryFault extends _Data__WEBPACK_IMPORTED_MODULE_0__.Data {
-    // constructor({
-    //     n, 
-    //     costType=SecondaryFaultCostType.MIN, 
-    //     projected=true, 
-    //     strategy= FractureStrategy.ANGLE, 
-    //     frictionAngle=30, 
-    //     pos, 
-    //     weight=1
-    // }: SecondaryFaultParams)
-    // {
-    //     super()
-    //     this.normal = n
-    //     this.position = pos
-    //     this.weight_ = weight
-    //     this.frictionAngle = frictionAngle
-    //     this.costType = costType
-    //     this.strategy = strategy
-    //     this.projected = projected
-    // }
-    initialize(params) { return false; }
-    check({ displ, strain, stress }) {
-        return stress !== undefined;
-    }
-    cost({ displ, strain, stress }) {
-        return 1;
-    }
-    generateNormals(stress) {
-        /*
-        const getPhi = (friction: number): number => (Math.PI * (45 - friction / 2)) / 180
-    
-        const internalFriction = getPhi(deg2rad(this.frictionAngle))
-        const s = [stress[]]
-        const eigV = eigen(stress).vectors
-    
-        return {
-            n1: eigV.map((e) => {
-                const v2 = [-e[3], -e[4], -e[5]]
-                const v3 = [-e[6], -e[7], -e[8]]
-                return rotateAxis(v2 as vec.Vector3, internalFriction, v3 as vec.Vector3)
-            }),
-            n2: eigV.map((e) => {
-                const nS3 = [-e[0], -e[1], -e[2]] as vec.Vector3
-                const v2 = [-e[3], -e[4], -e[5]] as vec.Vector3
-                return rotateAxis(v2, -internalFriction, nS3)
-            }),
-        }
-        */
-    }
-}
+DataFactory.bind(_CompactionShearBands_Kin__WEBPACK_IMPORTED_MODULE_4__.CompactionShearBandsKin, 'Compaction Shear Bands');
+DataFactory.bind(_ConjugateFaults_Kin__WEBPACK_IMPORTED_MODULE_5__.ConjugateFaultsKin, 'Conjugate Faults');
 
 
 /***/ }),
@@ -1205,14 +1657,14 @@ class StriatedPlaneFriction1 extends _StriatedPlane_Kin__WEBPACK_IMPORTED_MODULE
         if (super.initialize(params) === false) {
             return false;
         }
-        if (params.cohesion) {
-            this.cohesionRock = params.cohesion;
+        if (params[0].cohesion) {
+            this.cohesionRock = params[0].cohesion;
         }
-        if (params.friction) {
-            this.frictionAngleRock = params.friction;
+        if (params[0].friction) {
+            this.frictionAngleRock = params[0].friction;
         }
-        if (params.weightFriction) {
-            this.weightFriction = params.weightFriction;
+        if (params[0].weightFriction) {
+            this.weightFriction = params[0].weightFriction;
         }
         return true;
     }
@@ -1449,8 +1901,7 @@ class StriatedPlaneFriction2 extends _StriatedPlane_Friction1__WEBPACK_IMPORTED_
 
 __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
-/* harmony export */   "StriatedPlaneKin": () => (/* binding */ StriatedPlaneKin),
-/* harmony export */   "StriatedPlaneProblemType": () => (/* binding */ StriatedPlaneProblemType)
+/* harmony export */   "StriatedPlaneKin": () => (/* binding */ StriatedPlaneKin)
 /* harmony export */ });
 /* harmony import */ var _types__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ../types */ "./lib/types/index.ts");
 /* harmony import */ var _Data__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./Data */ "./lib/data/Data.ts");
@@ -1463,16 +1914,6 @@ __webpack_require__.r(__webpack_exports__);
 
 
 /**
- * - DYNAMIC is related to forces (or stresses)
- * - KINEMATIC is related to displacement field
- * @category Data
- */
-var StriatedPlaneProblemType;
-(function (StriatedPlaneProblemType) {
-    StriatedPlaneProblemType[StriatedPlaneProblemType["DYNAMIC"] = 0] = "DYNAMIC";
-    StriatedPlaneProblemType[StriatedPlaneProblemType["KINEMATIC"] = 1] = "KINEMATIC";
-})(StriatedPlaneProblemType || (StriatedPlaneProblemType = {}));
-/**
  * @category Data
  */
 class StriatedPlaneKin extends _Data__WEBPACK_IMPORTED_MODULE_1__.Data {
@@ -1481,29 +1922,29 @@ class StriatedPlaneKin extends _Data__WEBPACK_IMPORTED_MODULE_1__.Data {
         this.nPlane = undefined;
         this.nStriation = undefined;
         this.pos = undefined;
-        this.problemType = StriatedPlaneProblemType.DYNAMIC;
+        this.problemType = _types__WEBPACK_IMPORTED_MODULE_4__.StriatedPlaneProblemType.DYNAMIC;
         this.strategy = _types__WEBPACK_IMPORTED_MODULE_4__.FractureStrategy.ANGLE;
         this.oriented = true;
         this.EPS = 1e-7;
     }
     initialize(params) {
-        if (Number.isNaN(params.azimuth)) {
-            throw new Error('Missing azimuth angle for StriatedPlaneKin');
+        if (Number.isNaN(params[0].strike)) {
+            throw new Error('Missing strike angle for StriatedPlaneKin');
         }
-        if (Number.isNaN(params.dip)) {
+        if (Number.isNaN(params[0].dip)) {
             throw new Error('Missing dip angle for StriatedPlaneKin');
         }
-        if (params.dip < 90 && Number.isNaN(params.dipDirection)) {
+        if (params[0].dip < 90 && Number.isNaN(params[0].dipDirection)) {
             throw new Error('Missing dip direction for StriatedPlaneKin');
         }
         // Check that nPlane and nStriation are unit vectors
         const { nPlane, nStriation, nPerpStriation } = _utils_Fault__WEBPACK_IMPORTED_MODULE_3__.Fault.create({
-            strike: params.azimuth,
-            dipDirection: this.getMapDirection(params.dip_direction),
-            dip: params.dip,
-            sensOfMovement: this.getSensOfMovement(params.sens_of_movement),
-            rake: params.rake,
-            strikeDirection: this.getMapDirection(params.strike_direction)
+            strike: params[0].strike,
+            dipDirection: this.getMapDirection(params[0].dipDirection),
+            dip: params[0].dip,
+            sensOfMovement: this.getSensOfMovement(params[0].typeOfMovement),
+            rake: params[0].rake,
+            strikeDirection: this.getMapDirection(params[0].strikeDirection)
         });
         this.nPlane = nPlane;
         this.nStriation = nStriation;
@@ -1516,13 +1957,13 @@ class StriatedPlaneKin extends _Data__WEBPACK_IMPORTED_MODULE_1__.Data {
         return true;
     }
     check({ displ, strain, stress }) {
-        if (this.problemType === StriatedPlaneProblemType.DYNAMIC) {
+        if (this.problemType === _types__WEBPACK_IMPORTED_MODULE_4__.StriatedPlaneProblemType.DYNAMIC) {
             return stress !== undefined;
         }
         return displ !== undefined;
     }
     cost({ displ, strain, stress }) {
-        if (this.problemType === StriatedPlaneProblemType.DYNAMIC) {
+        if (this.problemType === _types__WEBPACK_IMPORTED_MODULE_4__.StriatedPlaneProblemType.DYNAMIC) {
             // For the first implementation, use the W&B hyp.
             // let d = tensor_x_Vector({T: stress, V: this.nPlane}) // Cauchy
             // d = normalizeVector(d)
@@ -1607,145 +2048,6 @@ mapSensOfMovement.set("Unknown", 9 /* SensOfMovement.UKN */);
 
 /***/ }),
 
-/***/ "./lib/data/StyloliteInterface.ts":
-/*!****************************************!*\
-  !*** ./lib/data/StyloliteInterface.ts ***!
-  \****************************************/
-/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
-
-__webpack_require__.r(__webpack_exports__);
-/* harmony export */ __webpack_require__.d(__webpack_exports__, {
-/* harmony export */   "StyloliteInterface": () => (/* binding */ StyloliteInterface)
-/* harmony export */ });
-/* harmony import */ var _youwol_math__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! @youwol/math */ "@youwol/math");
-/* harmony import */ var _youwol_math__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(_youwol_math__WEBPACK_IMPORTED_MODULE_0__);
-/* harmony import */ var _types__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ../types */ "./lib/types/index.ts");
-/* harmony import */ var _utils_fromAnglesToNormal__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ../utils/fromAnglesToNormal */ "./lib/utils/fromAnglesToNormal.ts");
-/* harmony import */ var _Data__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(/*! ./Data */ "./lib/data/Data.ts");
-/* harmony import */ var _types__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(/*! ./types */ "./lib/data/types.ts");
-
-
-
-
-
-// import { Fracture, FractureParams, FractureStrategy } from "./Fracture"
-/**
- * @category Data
- */
-class StyloliteInterface extends _Data__WEBPACK_IMPORTED_MODULE_3__.Data {
-    constructor() {
-        super(...arguments);
-        this.normal = [0, 0, 0];
-        this.strategy = _types__WEBPACK_IMPORTED_MODULE_4__.FractureStrategy.ANGLE;
-        this.position = undefined;
-    }
-    initialize(params) {
-        if (Number.isNaN(params.dip)) {
-            throw new Error('Missing dip angle for Stylolite Interface');
-        }
-        if (Number.isNaN(params.azimuth)) {
-            throw new Error('Missing azimuth angle for Stylolite Interface');
-        }
-        if (params.dip < 90 && Number.isNaN(params.dipDirection)) {
-            throw new Error('Missing dip direction for StriatedPlaneKin');
-        }
-        // Convert into normal
-        this.normal = (0,_utils_fromAnglesToNormal__WEBPACK_IMPORTED_MODULE_2__.fromAnglesToNormal)({ strike: params.azimuth, dip: params.dip, dipDirection: params.dipDirection });
-        //console.log(this.normal)
-        return true;
-    }
-    check({ displ, strain, stress }) {
-        return stress !== undefined;
-    }
-    cost({ displ, strain, stress }) {
-        // This version does not consider the case in which the stress shape ratio R is close to 1 (i.e., Sigma 2 = Sigma 1) 
-        //      and any plane containing Sigma 3 is consistent with the stress tensor solution
-        // [xx, xy, xz, yy, yz, zz]
-        const sigma = [stress[0][0], stress[0][1], stress[0][2], stress[1][1], stress[1][2], stress[2][2]];
-        // eigen = function calculating the 3 normalized eigenvectors (Sigma_1, Sigma_2, Sigma_3) of the stress tensor ??
-        // vectors is formated like: [S1x, S1y, S1z, S2x..., S3z]
-        const { values, vectors } = (0,_youwol_math__WEBPACK_IMPORTED_MODULE_0__.eigen)(sigma);
-        const s = [vectors[0], vectors[1], vectors[2]];
-        const dot = (0,_types__WEBPACK_IMPORTED_MODULE_1__.scalarProductUnitVectors)({ U: s, V: this.normal });
-        switch (this.strategy) {
-            case _types__WEBPACK_IMPORTED_MODULE_4__.FractureStrategy.DOT: return 1 - Math.abs(dot);
-            // Sigma 3 can be oriented in two opposite directions, thus to calculate the minimum angle we take the dot product as positive.
-            default: return Math.acos(Math.abs(dot)) / Math.PI;
-        }
-    }
-}
-
-
-/***/ }),
-
-/***/ "./lib/data/StyloliteTeeth.ts":
-/*!************************************!*\
-  !*** ./lib/data/StyloliteTeeth.ts ***!
-  \************************************/
-/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
-
-__webpack_require__.r(__webpack_exports__);
-/* harmony export */ __webpack_require__.d(__webpack_exports__, {
-/* harmony export */   "StyloliteTeeth": () => (/* binding */ StyloliteTeeth)
-/* harmony export */ });
-/* harmony import */ var _types_math__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ../types/math */ "./lib/types/math.ts");
-/* harmony import */ var _StyloliteInterface__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./StyloliteInterface */ "./lib/data/StyloliteInterface.ts");
-/* harmony import */ var _types_SphericalCoords__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ../types/SphericalCoords */ "./lib/types/SphericalCoords.ts");
-
-
-
-/**
- * This class inherits not from Data but rather from StyloliteInterface.
- * This means that the check() and cost() methods are already implemented (in
- * the right way). Only this.normal is important here, which is computed through
- * the private method styloliteTeethSphericalCoords.
- * @category Data
- */
-class StyloliteTeeth extends _StyloliteInterface__WEBPACK_IMPORTED_MODULE_1__.StyloliteInterface {
-    constructor() {
-        super(...arguments);
-        this.coordinates = new _types_SphericalCoords__WEBPACK_IMPORTED_MODULE_2__.SphericalCoords();
-        this.stylolite_teeth_plunge = 0;
-        this.stylolite_teeth_trend = 0;
-    }
-    initialize(params) {
-        if (Number.isNaN(params.stylolite_teeth_trend)) {
-            throw new Error('Missing trend angle for Stylolite Teeth');
-        }
-        if (Number.isNaN(params.stylolite_teeth_plunge)) {
-            throw new Error('Missing plunge angle for Stylolite Teeth');
-        }
-        this.stylolite_teeth_plunge = params.stylolite_teeth_plunge;
-        this.stylolite_teeth_trend = params.stylolite_teeth_trend;
-        this.styloliteTeethSphericalCoords();
-        return true;
-    }
-    // Each stylolite teeth is defined by a set of two parameters as follows:
-    //      Stylolite teeth trend: clockwise angle measured from the North direction [0, 360)
-    //      Stylolite teeth plunge: inclination angle relative to the horizontal in interval [0, 90] (positive downward)
-    // (phi,theta) : spherical coordinate angles defining the unit vector parallel to the stylolite teeth (pointing downward)
-    //                 in the geographic reference system: S = (X,Y,Z) = (E,N,Up)
-    // phi : azimuthal angle in interval [0, 2 PI), measured anticlockwise from the X axis (East direction) in reference system S
-    // theta: colatitude or polar angle in interval [0, PI], measured downward from the zenith (upward direction)
-    styloliteTeethSphericalCoords() {
-        // The polar angle (or colatitude) theta is calculated in radians from the plunge of the stylolite teeth:
-        this.coordinates.theta = (0,_types_math__WEBPACK_IMPORTED_MODULE_0__.deg2rad)(this.stylolite_teeth_plunge) + Math.PI / 2;
-        // The azimuthal angle is calculated in radians from the trend of the stylolite teeth :
-        //      trend + phi = PI / 2 
-        this.coordinates.phi = (0,_types_math__WEBPACK_IMPORTED_MODULE_0__.deg2rad)(90 - this.stylolite_teeth_trend);
-        if (this.stylolite_teeth_trend > 90) {
-            // phi < 0
-            this.coordinates.phi = this.coordinates.phi + 2 * Math.PI;
-        }
-        // The unit vector parallel to the stylolite teeth is defined by angles (phi, theta) in spherical coordinates.
-        // normal: unit vector parallel to the stylolite teeth (pointing downward) defined in the geographic reference system: S = (X,Y,Z)
-        this.normal = (0,_types_math__WEBPACK_IMPORTED_MODULE_0__.spherical2unitVectorCartesian)(this.coordinates);
-    }
-}
-
-
-/***/ }),
-
 /***/ "./lib/data/index.ts":
 /*!***************************!*\
   !*** ./lib/data/index.ts ***!
@@ -1754,31 +2056,29 @@ class StyloliteTeeth extends _StyloliteInterface__WEBPACK_IMPORTED_MODULE_1__.St
 
 __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   "CompactionShearBandsKin": () => (/* reexport safe */ _CompactionShearBands_Kin__WEBPACK_IMPORTED_MODULE_9__.CompactionShearBandsKin),
+/* harmony export */   "ConjugateFaultsKin": () => (/* reexport safe */ _ConjugateFaults_Kin__WEBPACK_IMPORTED_MODULE_10__.ConjugateFaultsKin),
 /* harmony export */   "Data": () => (/* reexport safe */ _Data__WEBPACK_IMPORTED_MODULE_0__.Data),
-/* harmony export */   "DataFactory": () => (/* reexport safe */ _Factory__WEBPACK_IMPORTED_MODULE_1__.DataFactory),
-/* harmony export */   "ExtensionFracture": () => (/* reexport safe */ _ExtensionFracture__WEBPACK_IMPORTED_MODULE_3__.ExtensionFracture),
-/* harmony export */   "FocalMechanismKin": () => (/* reexport safe */ _FocalMechanism_Kin__WEBPACK_IMPORTED_MODULE_10__.FocalMechanismKin),
-/* harmony export */   "FractureStrategy": () => (/* reexport safe */ _types__WEBPACK_IMPORTED_MODULE_2__.FractureStrategy),
-/* harmony export */   "SecondaryFault": () => (/* reexport safe */ _SecondaryFault__WEBPACK_IMPORTED_MODULE_9__.SecondaryFault),
-/* harmony export */   "SecondaryFaultCostType": () => (/* reexport safe */ _SecondaryFault__WEBPACK_IMPORTED_MODULE_9__.SecondaryFaultCostType),
+/* harmony export */   "DataDescription": () => (/* reexport safe */ _DataDescription__WEBPACK_IMPORTED_MODULE_1__.DataDescription),
+/* harmony export */   "DataFactory": () => (/* reexport safe */ _Factory__WEBPACK_IMPORTED_MODULE_3__.DataFactory),
+/* harmony export */   "ExtensionFracture": () => (/* reexport safe */ _ExtensionFracture__WEBPACK_IMPORTED_MODULE_5__.ExtensionFracture),
+/* harmony export */   "FractureStrategy": () => (/* reexport safe */ _types__WEBPACK_IMPORTED_MODULE_4__.FractureStrategy),
 /* harmony export */   "StriatedPlaneFriction1": () => (/* reexport safe */ _StriatedPlane_Friction1__WEBPACK_IMPORTED_MODULE_7__.StriatedPlaneFriction1),
 /* harmony export */   "StriatedPlaneFriction2": () => (/* reexport safe */ _StriatedPlane_Friction2__WEBPACK_IMPORTED_MODULE_8__.StriatedPlaneFriction2),
 /* harmony export */   "StriatedPlaneKin": () => (/* reexport safe */ _StriatedPlane_Kin__WEBPACK_IMPORTED_MODULE_6__.StriatedPlaneKin),
-/* harmony export */   "StriatedPlaneProblemType": () => (/* reexport safe */ _StriatedPlane_Kin__WEBPACK_IMPORTED_MODULE_6__.StriatedPlaneProblemType),
-/* harmony export */   "StyloliteInterface": () => (/* reexport safe */ _StyloliteInterface__WEBPACK_IMPORTED_MODULE_4__.StyloliteInterface),
-/* harmony export */   "StyloliteTeeth": () => (/* reexport safe */ _StyloliteTeeth__WEBPACK_IMPORTED_MODULE_5__.StyloliteTeeth)
+/* harmony export */   "StriatedPlaneProblemType": () => (/* reexport safe */ _types__WEBPACK_IMPORTED_MODULE_4__.StriatedPlaneProblemType)
 /* harmony export */ });
 /* harmony import */ var _Data__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./Data */ "./lib/data/Data.ts");
-/* harmony import */ var _Factory__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./Factory */ "./lib/data/Factory.ts");
-/* harmony import */ var _types__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ./types */ "./lib/data/types.ts");
-/* harmony import */ var _ExtensionFracture__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(/*! ./ExtensionFracture */ "./lib/data/ExtensionFracture.ts");
-/* harmony import */ var _StyloliteInterface__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(/*! ./StyloliteInterface */ "./lib/data/StyloliteInterface.ts");
-/* harmony import */ var _StyloliteTeeth__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(/*! ./StyloliteTeeth */ "./lib/data/StyloliteTeeth.ts");
+/* harmony import */ var _DataDescription__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./DataDescription */ "./lib/data/DataDescription.ts");
+/* harmony import */ var _DataParameters__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ./DataParameters */ "./lib/data/DataParameters.ts");
+/* harmony import */ var _Factory__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(/*! ./Factory */ "./lib/data/Factory.ts");
+/* harmony import */ var _types__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(/*! ./types */ "./lib/data/types.ts");
+/* harmony import */ var _ExtensionFracture__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(/*! ./ExtensionFracture */ "./lib/data/ExtensionFracture.ts");
 /* harmony import */ var _StriatedPlane_Kin__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(/*! ./StriatedPlane_Kin */ "./lib/data/StriatedPlane_Kin.ts");
 /* harmony import */ var _StriatedPlane_Friction1__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(/*! ./StriatedPlane_Friction1 */ "./lib/data/StriatedPlane_Friction1.ts");
 /* harmony import */ var _StriatedPlane_Friction2__WEBPACK_IMPORTED_MODULE_8__ = __webpack_require__(/*! ./StriatedPlane_Friction2 */ "./lib/data/StriatedPlane_Friction2.ts");
-/* harmony import */ var _SecondaryFault__WEBPACK_IMPORTED_MODULE_9__ = __webpack_require__(/*! ./SecondaryFault */ "./lib/data/SecondaryFault.ts");
-/* harmony import */ var _FocalMechanism_Kin__WEBPACK_IMPORTED_MODULE_10__ = __webpack_require__(/*! ./FocalMechanism_Kin */ "./lib/data/FocalMechanism_Kin.ts");
+/* harmony import */ var _CompactionShearBands_Kin__WEBPACK_IMPORTED_MODULE_9__ = __webpack_require__(/*! ./CompactionShearBands_Kin */ "./lib/data/CompactionShearBands_Kin.ts");
+/* harmony import */ var _ConjugateFaults_Kin__WEBPACK_IMPORTED_MODULE_10__ = __webpack_require__(/*! ./ConjugateFaults_Kin */ "./lib/data/ConjugateFaults_Kin.ts");
 
 
 
@@ -1790,6 +2090,10 @@ __webpack_require__.r(__webpack_exports__);
 
 
 
+// export * from './StyloliteInterface'
+// export * from './StyloliteTeeth'
+// export * from './SecondaryFault'
+// export * from './FocalMechanism_Kin'
 
 
 /***/ }),
@@ -1802,7 +2106,8 @@ __webpack_require__.r(__webpack_exports__);
 
 __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
-/* harmony export */   "FractureStrategy": () => (/* binding */ FractureStrategy)
+/* harmony export */   "FractureStrategy": () => (/* binding */ FractureStrategy),
+/* harmony export */   "StriatedPlaneProblemType": () => (/* binding */ StriatedPlaneProblemType)
 /* harmony export */ });
 /**
  * @category Data
@@ -1812,6 +2117,16 @@ var FractureStrategy;
     FractureStrategy[FractureStrategy["ANGLE"] = 0] = "ANGLE";
     FractureStrategy[FractureStrategy["DOT"] = 1] = "DOT";
 })(FractureStrategy || (FractureStrategy = {}));
+/**
+ * - DYNAMIC is related to forces (or stresses)
+ * - KINEMATIC is related to displacement field
+ * @category Data
+ */
+var StriatedPlaneProblemType;
+(function (StriatedPlaneProblemType) {
+    StriatedPlaneProblemType[StriatedPlaneProblemType["DYNAMIC"] = 0] = "DYNAMIC";
+    StriatedPlaneProblemType[StriatedPlaneProblemType["KINEMATIC"] = 1] = "KINEMATIC";
+})(StriatedPlaneProblemType || (StriatedPlaneProblemType = {}));
 
 
 /***/ }),
@@ -1824,14 +2139,16 @@ var FractureStrategy;
 
 __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   "CompactionShearBandsKin": () => (/* reexport safe */ _data__WEBPACK_IMPORTED_MODULE_1__.CompactionShearBandsKin),
+/* harmony export */   "ConjugateFaultsKin": () => (/* reexport safe */ _data__WEBPACK_IMPORTED_MODULE_1__.ConjugateFaultsKin),
 /* harmony export */   "Curve3D": () => (/* reexport safe */ _analysis__WEBPACK_IMPORTED_MODULE_0__.Curve3D),
 /* harmony export */   "Data": () => (/* reexport safe */ _data__WEBPACK_IMPORTED_MODULE_1__.Data),
+/* harmony export */   "DataDescription": () => (/* reexport safe */ _data__WEBPACK_IMPORTED_MODULE_1__.DataDescription),
 /* harmony export */   "DataFactory": () => (/* reexport safe */ _data__WEBPACK_IMPORTED_MODULE_1__.DataFactory),
 /* harmony export */   "Direction": () => (/* reexport safe */ _utils__WEBPACK_IMPORTED_MODULE_3__.Direction),
 /* harmony export */   "EquipotentialCurve": () => (/* reexport safe */ _analysis__WEBPACK_IMPORTED_MODULE_0__.EquipotentialCurve),
 /* harmony export */   "ExtensionFracture": () => (/* reexport safe */ _data__WEBPACK_IMPORTED_MODULE_1__.ExtensionFracture),
 /* harmony export */   "Fault": () => (/* reexport safe */ _utils__WEBPACK_IMPORTED_MODULE_3__.Fault),
-/* harmony export */   "FocalMechanismKin": () => (/* reexport safe */ _data__WEBPACK_IMPORTED_MODULE_1__.FocalMechanismKin),
 /* harmony export */   "FractureStrategy": () => (/* reexport safe */ _data__WEBPACK_IMPORTED_MODULE_1__.FractureStrategy),
 /* harmony export */   "GridSearch": () => (/* reexport safe */ _search__WEBPACK_IMPORTED_MODULE_4__.GridSearch),
 /* harmony export */   "IntegralCurve": () => (/* reexport safe */ _analysis__WEBPACK_IMPORTED_MODULE_0__.IntegralCurve),
@@ -1841,8 +2158,6 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */   "MonteCarlo": () => (/* reexport safe */ _search__WEBPACK_IMPORTED_MODULE_4__.MonteCarlo),
 /* harmony export */   "PoleCoords": () => (/* reexport safe */ _types__WEBPACK_IMPORTED_MODULE_2__.PoleCoords),
 /* harmony export */   "SearchMethodFactory": () => (/* reexport safe */ _search__WEBPACK_IMPORTED_MODULE_4__.SearchMethodFactory),
-/* harmony export */   "SecondaryFault": () => (/* reexport safe */ _data__WEBPACK_IMPORTED_MODULE_1__.SecondaryFault),
-/* harmony export */   "SecondaryFaultCostType": () => (/* reexport safe */ _data__WEBPACK_IMPORTED_MODULE_1__.SecondaryFaultCostType),
 /* harmony export */   "SensOfMovement": () => (/* reexport safe */ _utils__WEBPACK_IMPORTED_MODULE_3__.SensOfMovement),
 /* harmony export */   "SphericalCoords": () => (/* reexport safe */ _types__WEBPACK_IMPORTED_MODULE_2__.SphericalCoords),
 /* harmony export */   "StressTensor": () => (/* reexport safe */ _types__WEBPACK_IMPORTED_MODULE_2__.StressTensor),
@@ -1850,8 +2165,6 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */   "StriatedPlaneFriction2": () => (/* reexport safe */ _data__WEBPACK_IMPORTED_MODULE_1__.StriatedPlaneFriction2),
 /* harmony export */   "StriatedPlaneKin": () => (/* reexport safe */ _data__WEBPACK_IMPORTED_MODULE_1__.StriatedPlaneKin),
 /* harmony export */   "StriatedPlaneProblemType": () => (/* reexport safe */ _data__WEBPACK_IMPORTED_MODULE_1__.StriatedPlaneProblemType),
-/* harmony export */   "StyloliteInterface": () => (/* reexport safe */ _data__WEBPACK_IMPORTED_MODULE_1__.StyloliteInterface),
-/* harmony export */   "StyloliteTeeth": () => (/* reexport safe */ _data__WEBPACK_IMPORTED_MODULE_1__.StyloliteTeeth),
 /* harmony export */   "add_Vectors": () => (/* reexport safe */ _types__WEBPACK_IMPORTED_MODULE_2__.add_Vectors),
 /* harmony export */   "angularDifStriations": () => (/* reexport safe */ _types__WEBPACK_IMPORTED_MODULE_2__.angularDifStriations),
 /* harmony export */   "arcCircle": () => (/* reexport safe */ _types__WEBPACK_IMPORTED_MODULE_2__.arcCircle),
@@ -1861,8 +2174,8 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */   "createDefaultSolution": () => (/* reexport safe */ _InverseMethod__WEBPACK_IMPORTED_MODULE_6__.createDefaultSolution),
 /* harmony export */   "crossProduct": () => (/* reexport safe */ _types__WEBPACK_IMPORTED_MODULE_2__.crossProduct),
 /* harmony export */   "decodeCSV": () => (/* reexport safe */ _io__WEBPACK_IMPORTED_MODULE_5__.decodeCSV),
-/* harmony export */   "decodeCSV_Angles": () => (/* reexport safe */ _io__WEBPACK_IMPORTED_MODULE_5__.decodeCSV_Angles),
 /* harmony export */   "deg2rad": () => (/* reexport safe */ _types__WEBPACK_IMPORTED_MODULE_2__.deg2rad),
+/* harmony export */   "directionExists": () => (/* reexport safe */ _utils__WEBPACK_IMPORTED_MODULE_3__.directionExists),
 /* harmony export */   "faultParams": () => (/* reexport safe */ _utils__WEBPACK_IMPORTED_MODULE_3__.faultParams),
 /* harmony export */   "faultStressComponents": () => (/* reexport safe */ _types__WEBPACK_IMPORTED_MODULE_2__.faultStressComponents),
 /* harmony export */   "getDirectionFromString": () => (/* reexport safe */ _utils__WEBPACK_IMPORTED_MODULE_3__.getDirectionFromString),
@@ -1961,78 +2274,6 @@ function decodeCSV(lines) {
 
 /***/ }),
 
-/***/ "./lib/io/decodeCSV_Angles.ts":
-/*!************************************!*\
-  !*** ./lib/io/decodeCSV_Angles.ts ***!
-  \************************************/
-/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
-
-__webpack_require__.r(__webpack_exports__);
-/* harmony export */ __webpack_require__.d(__webpack_exports__, {
-/* harmony export */   "decodeCSV_Angles": () => (/* binding */ decodeCSV_Angles)
-/* harmony export */ });
-/* harmony import */ var _data__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ../data */ "./lib/data/index.ts");
-/* harmony import */ var _utils__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ../utils */ "./lib/utils/index.ts");
-
-
-/* Columns format
-    Data type;
-    Azimuth [0,360);
-    Dip [0,90];
-    Dip direction;
-    Rake [0,90];
-    Strike direction;
-    Striation trend [0,360);
-    Sense of mouvement;
-    Stylolite Teeth trend [0,360);
-    Stylolite Teeth plunge [0,90]
-*/
-function decodeCSV_Angles(lines, otherParams) {
-    const datas = [];
-    for (let i = 0; i < lines.length; ++i) {
-        if (i === 0) {
-            continue; // line header
-        }
-        const line = (0,_utils__WEBPACK_IMPORTED_MODULE_1__.trimAll)(lines[i].trim());
-        if (line.length === 0) {
-            continue;
-        }
-        const r = line.split(';').map(s => s.replace(',', '.'));
-        if (r.length === 0) {
-            continue;
-        }
-        if (r.length === 10) {
-            const dataType = r[0];
-            const data = _data__WEBPACK_IMPORTED_MODULE_0__.DataFactory.create(dataType);
-            if (data === undefined) {
-                throw new Error(`data type "${dataType}" is not defined`);
-            }
-            // The 9 (optional) parameters defined in Excel
-            let i = 1;
-            const params = {
-                azimuth: parseFloat(r[i++]),
-                dip: parseFloat(r[i++]),
-                dip_direction: r[i++],
-                rake: parseFloat(r[i++]),
-                strike_direction: r[i++],
-                striation_trend: parseFloat(r[i++]),
-                sens_of_movement: r[i++],
-                stylolite_teeth_trend: parseFloat(r[i++]),
-                stylolite_teeth_plunge: parseFloat(r[i++])
-            };
-            for (let key in otherParams) {
-                params[key] = otherParams[key];
-            }
-            data.initialize(params);
-            datas.push(data);
-        }
-    }
-    return datas;
-}
-
-
-/***/ }),
-
 /***/ "./lib/io/index.ts":
 /*!*************************!*\
   !*** ./lib/io/index.ts ***!
@@ -2041,13 +2282,11 @@ function decodeCSV_Angles(lines, otherParams) {
 
 __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
-/* harmony export */   "decodeCSV": () => (/* reexport safe */ _decodeCSV__WEBPACK_IMPORTED_MODULE_0__.decodeCSV),
-/* harmony export */   "decodeCSV_Angles": () => (/* reexport safe */ _decodeCSV_Angles__WEBPACK_IMPORTED_MODULE_1__.decodeCSV_Angles)
+/* harmony export */   "decodeCSV": () => (/* reexport safe */ _decodeCSV__WEBPACK_IMPORTED_MODULE_0__.decodeCSV)
 /* harmony export */ });
 /* harmony import */ var _decodeCSV__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./decodeCSV */ "./lib/io/decodeCSV.ts");
-/* harmony import */ var _decodeCSV_Angles__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./decodeCSV_Angles */ "./lib/io/decodeCSV_Angles.ts");
 
-
+// export * from './decodeCSV_Angles'
 
 
 /***/ }),
@@ -3683,6 +3922,262 @@ function trend2phi(trend) {
 
 /***/ }),
 
+/***/ "./lib/utils/CompactionShearBands.ts":
+/*!*******************************************!*\
+  !*** ./lib/utils/CompactionShearBands.ts ***!
+  \*******************************************/
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   "CompactionShearBands": () => (/* binding */ CompactionShearBands)
+/* harmony export */ });
+/* harmony import */ var _types__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ../types */ "./lib/types/index.ts");
+/* harmony import */ var _Fault__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./Fault */ "./lib/utils/Fault.ts");
+
+
+class CompactionShearBands {
+    constructor() {
+        // (e_phi, e_theta) = unit vectors defining local reference frame tangent to the sphere in spherical coordinates
+        this.e_phi = (0,_types__WEBPACK_IMPORTED_MODULE_0__.newVector3D)();
+        this.e_theta = (0,_types__WEBPACK_IMPORTED_MODULE_0__.newVector3D)();
+        this.normal_ = (0,_types__WEBPACK_IMPORTED_MODULE_0__.newVector3D)();
+        this.nStriation = undefined;
+        this.EPS = 1e-7;
+    }
+    static create({ strike, dipDirection, dip, sensOfMovement, rake, strikeDirection }) {
+        const f = new _Fault__WEBPACK_IMPORTED_MODULE_1__.Fault({ strike, dipDirection, dip });
+        f.setStriation({ sensOfMovement, rake, strikeDirection });
+        return {
+            nPlane: f.normal,
+            nStriation: f.striation,
+            nPerpStriation: f.e_perp_striation,
+            fault: f
+        };
+    }
+    get normal() {
+        return this.normal_;
+    }
+    compactionShearBandCheckMouvement({ noPlane, nPlane, coordinates, sensOfMovement, nSigma3_Sc, nSigma2_Sc }) {
+        // Function calculating the striation unit vector in the local reference frame in polar coordinates from the rake
+        //      The effect of fault movement on the striation is considered in function faultStriationAngle_B
+        // Each fault is defined by a set of parameters as follows:
+        //      The fault plane orientation is defined by three parameters:
+        //      Fault strike: clockwise angle measured from the North direction [0, 360)
+        //      Strike direction (optional): (N, E, S, W) or a combination of two direction (NE, SE, SW, NW).
+        //      Fault dip: [0, 90]
+        //      Dip direction: (N, E, S, W) or a combination of two directions (NE, SE, SW, NW).
+        // The orientation of the striation in the fault plane can defined in two different ways (which are exclusive):
+        // 1-   Rake (or pitch) [0,90], measured from the strike direction, which points in one of the two opposite directions of the fault strike.
+        //      Strike direction : (N, E, S, W) or a combination of two direction (NE, SE, SW, NW).
+        //      Note that the specified strike direction is used to determine the spatial orientation of the striation 
+        // 2-   For shallow-dipping planes (i.e., the compass inclinometer is inaccurate):
+        //      Striae trend: [0, 360)
+        // alphaStria : striation angle measured in the local reference plane (e_phi, e_theta) indicating the motion of the outward block
+        //      alphaStria is measured clockwise from e_phi, in interval [0, 2 PI) (this choice is consistent with the definition of the rake, which is measured from the fault strike)
+        // (coordinates.phi, coordinates.theta) : spherical coords of compaction-shear band in the geographic reference system: S = (X,Y,Z) = (E,N,Up)
+        // Sperical coords are calculated using method faultSphericalCoords in class fault
+        // e_phi : unit vector pointing toward the azimuthal direction in the local reference frame in spherical coords
+        this.e_phi[0] = -Math.sin(coordinates.phi);
+        this.e_phi[1] = Math.cos(coordinates.phi);
+        this.e_phi[2] = 0;
+        // e_theta : unit vector pointing toward the dip direction in the local reference frame in spherical coords
+        this.e_theta[0] = Math.cos(coordinates.theta) * Math.cos(coordinates.phi);
+        this.e_theta[1] = Math.cos(coordinates.theta) * Math.sin(coordinates.phi);
+        this.e_theta[2] = -Math.sin(coordinates.theta);
+        // Check that the sense of mouvement is consistent with the orientation of stress axes
+        // This requires the calculation of the striation vector indicating movement of the outward block relative to the inner block
+        // The striation vector is in the plane of movement:  nStriation = nPlane x nSigma2_Sc
+        let nStriation = (0,_types__WEBPACK_IMPORTED_MODULE_0__.normalizedCrossProduct)({ U: nPlane, V: nSigma2_Sc });
+        if ((0,_types__WEBPACK_IMPORTED_MODULE_0__.scalarProductUnitVectors)({ U: nPlane, V: nSigma3_Sc }) < 0) {
+            // nSigma3_Sc points inward (toward the fault plane)
+            // Thus, invert the sense of nSigma3_Sc so that it points outward (in the direction of the normal to the plane):
+            nSigma3_Sc = (0,_types__WEBPACK_IMPORTED_MODULE_0__.constant_x_Vector)({ k: -1, V: nSigma3_Sc });
+        }
+        if ((0,_types__WEBPACK_IMPORTED_MODULE_0__.scalarProductUnitVectors)({ U: nStriation, V: nSigma3_Sc }) < 0) {
+            // nSigma3_Sc and nStriation should be both located in the compressional quadrant relative to the outward hemisphere of the fault plane
+            //      In other words, the angle (nSigma3_Sc, nStriation) < PI/2
+            // However, if nStriation . nSigma3_Sc < 0 then this condition is not satisfied (i.e. nStriation is located in the dilatant quadrant)
+            // Thus, invert the sense of the striation so that it points toward the compressional quadrant:
+            nStriation = (0,_types__WEBPACK_IMPORTED_MODULE_0__.constant_x_Vector)({ k: -1, V: nStriation });
+        }
+        // The strike slip component of movement is defined by the projection of the striation vector along unit vector e_phi
+        let strikeSlipComponent = (0,_types__WEBPACK_IMPORTED_MODULE_0__.scalarProductUnitVectors)({ U: nStriation, V: this.e_phi });
+        // The dip component of movement is defined by the projection of the striation vector along unit vector e_theta
+        let dipComponent = (0,_types__WEBPACK_IMPORTED_MODULE_0__.scalarProductUnitVectors)({ U: nStriation, V: this.e_theta });
+        // Check consistency of strike-lateral component of movement
+        if (strikeSlipComponent > this.EPS) {
+            // In principle, the conjugated plane has a left-lateral component of movement
+            if (sensOfMovement === 3 /* SensOfMovement.RL */ || sensOfMovement === 5 /* SensOfMovement.N_RL */ || sensOfMovement === 7 /* SensOfMovement.I_RL */) {
+                // throw new Error('Sense of movement of conjugated fault ' + noPlane + ' includes a right-lateral (RL) which is not consistent with fault kenmatics')
+                throw new Error(`Sense of movement of conjugated fault ${noPlane} includes a right-lateral (RL) which is not consistent with fault kenmatics`);
+            }
+        }
+        else if (strikeSlipComponent < -this.EPS) {
+            // In principle, the conjugated plane has a right-lateral component of movement
+            if (sensOfMovement === 4 /* SensOfMovement.LL */ || sensOfMovement === 6 /* SensOfMovement.N_LL */ || sensOfMovement === 8 /* SensOfMovement.I_LL */) {
+                throw new Error(`Sense of movement of conjugated fault ${noPlane} includes a left-lateral (LL), which is not consistent with fault kenmatics`);
+            }
+        }
+        else {
+            // In principle, the strike-slip component of movement of the conjugated plane is negligeable
+            if (sensOfMovement !== 1 /* SensOfMovement.N */ && sensOfMovement !== 2 /* SensOfMovement.I */ && sensOfMovement !== 9 /* SensOfMovement.UKN */) {
+                throw new Error(`Sense of movement of conjugated fault ${noPlane} includes a strike-slip component, which is not consistent with fault kenmatics`);
+            }
+        }
+        // Check consistency of dip-slip component of movement
+        if (dipComponent > this.EPS) {
+            // In principle, the conjugated plane has a normal component of movement
+            if (sensOfMovement === 2 /* SensOfMovement.I */ || sensOfMovement === 7 /* SensOfMovement.I_RL */ || sensOfMovement === 8 /* SensOfMovement.I_LL */) {
+                throw new Error(`Sense of movement of conjugated fault ${noPlane} includes an inverse (I) component, which is not consistent with fault kenmatics`);
+            }
+        }
+        else if (dipComponent < -this.EPS) {
+            // In principle, the conjugated plane has an inverse component of movement
+            if (sensOfMovement === 1 /* SensOfMovement.N */ || sensOfMovement === 5 /* SensOfMovement.N_RL */ || sensOfMovement === 6 /* SensOfMovement.N_LL */) {
+                throw new Error(`Sense of movement of conjugated fault ${noPlane} includes a normal component, which is not consistent with fault kenmatics`);
+            }
+        }
+        else {
+            // In principle, the dip component of movement of the conjugated plane is negligeable
+            if (sensOfMovement !== 3 /* SensOfMovement.RL */ && sensOfMovement !== 4 /* SensOfMovement.LL */ && sensOfMovement !== 9 /* SensOfMovement.UKN */) {
+                throw new Error(`Sense of movement of conjugated fault ${noPlane} includes an dip component (I or N), which is not consistent with fault kenmatics`);
+            }
+        }
+    }
+}
+
+
+/***/ }),
+
+/***/ "./lib/utils/ConjugateFaults.ts":
+/*!**************************************!*\
+  !*** ./lib/utils/ConjugateFaults.ts ***!
+  \**************************************/
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   "ConjugateFaults": () => (/* binding */ ConjugateFaults)
+/* harmony export */ });
+/* harmony import */ var _types__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ../types */ "./lib/types/index.ts");
+/* harmony import */ var _Fault__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./Fault */ "./lib/utils/Fault.ts");
+
+
+class ConjugateFaults {
+    constructor() {
+        // (e_phi, e_theta) = unit vectors defining local reference frame tangent to the sphere in spherical coordinates
+        this.e_phi = (0,_types__WEBPACK_IMPORTED_MODULE_0__.newVector3D)();
+        this.e_theta = (0,_types__WEBPACK_IMPORTED_MODULE_0__.newVector3D)();
+        this.normal_ = (0,_types__WEBPACK_IMPORTED_MODULE_0__.newVector3D)();
+        this.nStriation = undefined;
+        this.EPS = 1e-7;
+    }
+    static create({ strike, dipDirection, dip, sensOfMovement, rake, strikeDirection }) {
+        const f = new _Fault__WEBPACK_IMPORTED_MODULE_1__.Fault({ strike, dipDirection, dip });
+        f.setStriation({ sensOfMovement, rake, strikeDirection });
+        return {
+            nPlane: f.normal,
+            nStriation: f.striation,
+            nPerpStriation: f.e_perp_striation,
+            fault: f
+        };
+    }
+    get normal() {
+        return this.normal_;
+    }
+    conjugatePlaneCheckMouvement({ noPlane, nPlane, coordinates, sensOfMovement, nSigma3_Sc, nSigma2_Sc }) {
+        // Function calculating the striation unit vector in the local reference frame in polar coordinates from the rake
+        //      The effect of fault movement on the striation is considered in function faultStriationAngle_B
+        // Each fault is defined by a set of parameters as follows:
+        //      The fault plane orientation is defined by three parameters:
+        //      Fault strike: clockwise angle measured from the North direction [0, 360)
+        //      Strike direction (optional): (N, E, S, W) or a combination of two direction (NE, SE, SW, NW).
+        //      Fault dip: [0, 90]
+        //      Dip direction: (N, E, S, W) or a combination of two directions (NE, SE, SW, NW).
+        // The orientation of the striation in the fault plane can defined in two different ways (which are exclusive):
+        // 1-   Rake (or pitch) [0,90], measured from the strike direction, which points in one of the two opposite directions of the fault strike.
+        //      Strike direction : (N, E, S, W) or a combination of two direction (NE, SE, SW, NW).
+        //      Note that the specified strike direction is used to determine the spatial orientation of the striation 
+        // 2-   For shallow-dipping planes (i.e., the compass inclinometer is inaccurate):
+        //      Striae trend: [0, 360)
+        // alphaStria : striation angle measured in the local reference plane (e_phi, e_theta) indicating the motion of the outward block
+        //      alphaStria is measured clockwise from e_phi, in interval [0, 2 PI) (this choice is consistent with the definition of the rake, which is measured from the fault strike)
+        // (coordinates.phi, coordinates.theta) : spherical coords of conjugate faults in the geographic reference system: S = (X,Y,Z) = (E,N,Up)
+        // Sperical coords are calculated using method faultSphericalCoords in class fault
+        // e_phi : unit vector pointing toward the azimuthal direction in the local reference frame in spherical coords
+        this.e_phi[0] = -Math.sin(coordinates.phi);
+        this.e_phi[1] = Math.cos(coordinates.phi);
+        this.e_phi[2] = 0;
+        // e_theta : unit vector pointing toward the dip direction in the local reference frame in spherical coords
+        this.e_theta[0] = Math.cos(coordinates.theta) * Math.cos(coordinates.phi);
+        this.e_theta[1] = Math.cos(coordinates.theta) * Math.sin(coordinates.phi);
+        this.e_theta[2] = -Math.sin(coordinates.theta);
+        // Check that the sense of mouvement is consistent with the orientation of stress axes
+        // This requires the calculation of the striation vector indicating movement of the outward block relative to the inner block
+        // The striation vector is in the plane of movement:  nStriation = nPlane x nSigma2_Sc
+        let nStriation = (0,_types__WEBPACK_IMPORTED_MODULE_0__.normalizedCrossProduct)({ U: nPlane, V: nSigma2_Sc });
+        if ((0,_types__WEBPACK_IMPORTED_MODULE_0__.scalarProductUnitVectors)({ U: nPlane, V: nSigma3_Sc }) < 0) {
+            // nSigma3_Sc points inward (toward the fault plane)
+            // Thus, invert the sense of nSigma3_Sc so that it points outward (in the direction of the normal to the plane):
+            nSigma3_Sc = (0,_types__WEBPACK_IMPORTED_MODULE_0__.constant_x_Vector)({ k: -1, V: nSigma3_Sc });
+        }
+        if ((0,_types__WEBPACK_IMPORTED_MODULE_0__.scalarProductUnitVectors)({ U: nStriation, V: nSigma3_Sc }) < 0) {
+            // nSigma3_Sc and nStriation should be both located in the compressional quadrant relative to the outward hemisphere of the fault plane
+            //      In other words, the angle (nSigma3_Sc, nStriation) < PI/2
+            // However, if nStriation . nSigma3_Sc < 0 then this condition is not satisfied (i.e. nStriation is located in the dilatant quadrant)
+            // Thus, invert the sense of the striation so that it points toward the compressional quadrant:
+            nStriation = (0,_types__WEBPACK_IMPORTED_MODULE_0__.constant_x_Vector)({ k: -1, V: nStriation });
+        }
+        // The strike-slip component of movement is defined by the projection of the striation vector along unit vector e_phi
+        let strikeSlipComponent = (0,_types__WEBPACK_IMPORTED_MODULE_0__.scalarProductUnitVectors)({ U: nStriation, V: this.e_phi });
+        // The dip component of movement is defined by the projection of the striation vector along unit vector e_theta
+        let dipComponent = (0,_types__WEBPACK_IMPORTED_MODULE_0__.scalarProductUnitVectors)({ U: nStriation, V: this.e_theta });
+        // Check consistency of strike-lateral component of movement
+        if (strikeSlipComponent > this.EPS) {
+            // In principle, the conjugated plane has a left-lateral component of movement
+            if (sensOfMovement === 3 /* SensOfMovement.RL */ || sensOfMovement === 5 /* SensOfMovement.N_RL */ || sensOfMovement === 7 /* SensOfMovement.I_RL */) {
+                // throw new Error('Sense of movement of conjugated fault ' + noPlane + ' includes a right-lateral (RL) which is not consistent with fault kenmatics')
+                throw new Error(`Sense of movement of conjugated fault ${noPlane} includes a right-lateral (RL) which is not consistent with fault kenmatics`);
+            }
+        }
+        else if (strikeSlipComponent < -this.EPS) {
+            // In principle, the conjugated plane has a right-lateral component of movement
+            if (sensOfMovement === 4 /* SensOfMovement.LL */ || sensOfMovement === 6 /* SensOfMovement.N_LL */ || sensOfMovement === 8 /* SensOfMovement.I_LL */) {
+                throw new Error(`Sense of movement of conjugated fault ${noPlane} includes a left-lateral (LL), which is not consistent with fault kenmatics`);
+            }
+        }
+        else {
+            // In principle, the strike-slip component of movement of the conjugated plane is negligeable
+            if (sensOfMovement !== 1 /* SensOfMovement.N */ && sensOfMovement !== 2 /* SensOfMovement.I */ && sensOfMovement !== 9 /* SensOfMovement.UKN */) {
+                throw new Error(`Sense of movement of conjugated fault ${noPlane} includes a strike-slip component, which is not consistent with fault kenmatics`);
+            }
+        }
+        // Check consistency of dip-slip component of movement
+        if (dipComponent > this.EPS) {
+            // In principle, the conjugated plane has a normal component of movement
+            if (sensOfMovement === 2 /* SensOfMovement.I */ || sensOfMovement === 7 /* SensOfMovement.I_RL */ || sensOfMovement === 8 /* SensOfMovement.I_LL */) {
+                throw new Error(`Sense of movement of conjugated fault ${noPlane} includes an inverse (I) component, which is not consistent with fault kenmatics`);
+            }
+        }
+        else if (dipComponent < -this.EPS) {
+            // In principle, the conjugated plane has an inverse component of movement
+            if (sensOfMovement === 1 /* SensOfMovement.N */ || sensOfMovement === 5 /* SensOfMovement.N_RL */ || sensOfMovement === 6 /* SensOfMovement.N_LL */) {
+                throw new Error(`Sense of movement of conjugated fault ${noPlane} includes a normal component, which is not consistent with fault kenmatics`);
+            }
+        }
+        else {
+            // In principle, the dip component of movement of the conjugated plane is negligeable
+            if (sensOfMovement !== 3 /* SensOfMovement.RL */ && sensOfMovement !== 4 /* SensOfMovement.LL */ && sensOfMovement !== 9 /* SensOfMovement.UKN */) {
+                throw new Error(`Sense of movement of conjugated fault ${noPlane} includes an dip component (I or N), which is not consistent with fault kenmatics`);
+            }
+        }
+    }
+}
+
+
+/***/ }),
+
 /***/ "./lib/utils/Fault.ts":
 /*!****************************!*\
   !*** ./lib/utils/Fault.ts ***!
@@ -3694,6 +4189,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */   "Direction": () => (/* binding */ Direction),
 /* harmony export */   "Fault": () => (/* binding */ Fault),
 /* harmony export */   "SensOfMovement": () => (/* binding */ SensOfMovement),
+/* harmony export */   "directionExists": () => (/* binding */ directionExists),
 /* harmony export */   "faultParams": () => (/* binding */ faultParams),
 /* harmony export */   "getDirectionFromString": () => (/* binding */ getDirectionFromString),
 /* harmony export */   "getSensOfMovementFromString": () => (/* binding */ getSensOfMovementFromString)
@@ -3748,9 +4244,21 @@ var Direction;
     Direction[Direction["NE"] = 4] = "NE";
     Direction[Direction["SE"] = 5] = "SE";
     Direction[Direction["SW"] = 6] = "SW";
-    Direction[Direction["NW"] = 7] = "NW"; // 7
+    Direction[Direction["NW"] = 7] = "NW";
+    Direction[Direction["UNKOWN"] = 8] = "UNKOWN";
+    Direction[Direction["ERROR"] = 9] = "ERROR";
 })(Direction || (Direction = {}));
+const dirs = ['E', 'W', 'N', 'S', 'NE', 'SE', 'SW', 'NW'];
+function directionExists(s) {
+    if (s.length === 0) {
+        return true;
+    }
+    return dirs.includes(s);
+}
 function getDirectionFromString(s) {
+    if (s.length === 0) {
+        return 8 /* Direction.UNKOWN */;
+    }
     switch (s) {
         case 'E': return 0 /* Direction.E */;
         case 'W': return 1 /* Direction.W */;
@@ -3760,6 +4268,7 @@ function getDirectionFromString(s) {
         case 'SE': return 5 /* Direction.SE */;
         case 'SW': return 6 /* Direction.SW */;
         case 'NW': return 7 /* Direction.NW */;
+        default: return 9 /* Direction.ERROR */;
     }
 }
 function faultParams({ strike, dipDirection, dip }) {
@@ -4964,6 +5473,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */   "Direction": () => (/* reexport safe */ _Fault__WEBPACK_IMPORTED_MODULE_0__.Direction),
 /* harmony export */   "Fault": () => (/* reexport safe */ _Fault__WEBPACK_IMPORTED_MODULE_0__.Fault),
 /* harmony export */   "SensOfMovement": () => (/* reexport safe */ _Fault__WEBPACK_IMPORTED_MODULE_0__.SensOfMovement),
+/* harmony export */   "directionExists": () => (/* reexport safe */ _Fault__WEBPACK_IMPORTED_MODULE_0__.directionExists),
 /* harmony export */   "faultParams": () => (/* reexport safe */ _Fault__WEBPACK_IMPORTED_MODULE_0__.faultParams),
 /* harmony export */   "getDirectionFromString": () => (/* reexport safe */ _Fault__WEBPACK_IMPORTED_MODULE_0__.getDirectionFromString),
 /* harmony export */   "getSensOfMovementFromString": () => (/* reexport safe */ _Fault__WEBPACK_IMPORTED_MODULE_0__.getSensOfMovementFromString),
@@ -5084,14 +5594,16 @@ var __webpack_exports__ = {};
   \******************/
 __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   "CompactionShearBandsKin": () => (/* reexport safe */ _lib__WEBPACK_IMPORTED_MODULE_0__.CompactionShearBandsKin),
+/* harmony export */   "ConjugateFaultsKin": () => (/* reexport safe */ _lib__WEBPACK_IMPORTED_MODULE_0__.ConjugateFaultsKin),
 /* harmony export */   "Curve3D": () => (/* reexport safe */ _lib__WEBPACK_IMPORTED_MODULE_0__.Curve3D),
 /* harmony export */   "Data": () => (/* reexport safe */ _lib__WEBPACK_IMPORTED_MODULE_0__.Data),
+/* harmony export */   "DataDescription": () => (/* reexport safe */ _lib__WEBPACK_IMPORTED_MODULE_0__.DataDescription),
 /* harmony export */   "DataFactory": () => (/* reexport safe */ _lib__WEBPACK_IMPORTED_MODULE_0__.DataFactory),
 /* harmony export */   "Direction": () => (/* reexport safe */ _lib__WEBPACK_IMPORTED_MODULE_0__.Direction),
 /* harmony export */   "EquipotentialCurve": () => (/* reexport safe */ _lib__WEBPACK_IMPORTED_MODULE_0__.EquipotentialCurve),
 /* harmony export */   "ExtensionFracture": () => (/* reexport safe */ _lib__WEBPACK_IMPORTED_MODULE_0__.ExtensionFracture),
 /* harmony export */   "Fault": () => (/* reexport safe */ _lib__WEBPACK_IMPORTED_MODULE_0__.Fault),
-/* harmony export */   "FocalMechanismKin": () => (/* reexport safe */ _lib__WEBPACK_IMPORTED_MODULE_0__.FocalMechanismKin),
 /* harmony export */   "FractureStrategy": () => (/* reexport safe */ _lib__WEBPACK_IMPORTED_MODULE_0__.FractureStrategy),
 /* harmony export */   "GridSearch": () => (/* reexport safe */ _lib__WEBPACK_IMPORTED_MODULE_0__.GridSearch),
 /* harmony export */   "IntegralCurve": () => (/* reexport safe */ _lib__WEBPACK_IMPORTED_MODULE_0__.IntegralCurve),
@@ -5101,8 +5613,6 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */   "MonteCarlo": () => (/* reexport safe */ _lib__WEBPACK_IMPORTED_MODULE_0__.MonteCarlo),
 /* harmony export */   "PoleCoords": () => (/* reexport safe */ _lib__WEBPACK_IMPORTED_MODULE_0__.PoleCoords),
 /* harmony export */   "SearchMethodFactory": () => (/* reexport safe */ _lib__WEBPACK_IMPORTED_MODULE_0__.SearchMethodFactory),
-/* harmony export */   "SecondaryFault": () => (/* reexport safe */ _lib__WEBPACK_IMPORTED_MODULE_0__.SecondaryFault),
-/* harmony export */   "SecondaryFaultCostType": () => (/* reexport safe */ _lib__WEBPACK_IMPORTED_MODULE_0__.SecondaryFaultCostType),
 /* harmony export */   "SensOfMovement": () => (/* reexport safe */ _lib__WEBPACK_IMPORTED_MODULE_0__.SensOfMovement),
 /* harmony export */   "SphericalCoords": () => (/* reexport safe */ _lib__WEBPACK_IMPORTED_MODULE_0__.SphericalCoords),
 /* harmony export */   "StressTensor": () => (/* reexport safe */ _lib__WEBPACK_IMPORTED_MODULE_0__.StressTensor),
@@ -5110,8 +5620,6 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */   "StriatedPlaneFriction2": () => (/* reexport safe */ _lib__WEBPACK_IMPORTED_MODULE_0__.StriatedPlaneFriction2),
 /* harmony export */   "StriatedPlaneKin": () => (/* reexport safe */ _lib__WEBPACK_IMPORTED_MODULE_0__.StriatedPlaneKin),
 /* harmony export */   "StriatedPlaneProblemType": () => (/* reexport safe */ _lib__WEBPACK_IMPORTED_MODULE_0__.StriatedPlaneProblemType),
-/* harmony export */   "StyloliteInterface": () => (/* reexport safe */ _lib__WEBPACK_IMPORTED_MODULE_0__.StyloliteInterface),
-/* harmony export */   "StyloliteTeeth": () => (/* reexport safe */ _lib__WEBPACK_IMPORTED_MODULE_0__.StyloliteTeeth),
 /* harmony export */   "add_Vectors": () => (/* reexport safe */ _lib__WEBPACK_IMPORTED_MODULE_0__.add_Vectors),
 /* harmony export */   "angularDifStriations": () => (/* reexport safe */ _lib__WEBPACK_IMPORTED_MODULE_0__.angularDifStriations),
 /* harmony export */   "arcCircle": () => (/* reexport safe */ _lib__WEBPACK_IMPORTED_MODULE_0__.arcCircle),
@@ -5121,8 +5629,8 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */   "createDefaultSolution": () => (/* reexport safe */ _lib__WEBPACK_IMPORTED_MODULE_0__.createDefaultSolution),
 /* harmony export */   "crossProduct": () => (/* reexport safe */ _lib__WEBPACK_IMPORTED_MODULE_0__.crossProduct),
 /* harmony export */   "decodeCSV": () => (/* reexport safe */ _lib__WEBPACK_IMPORTED_MODULE_0__.decodeCSV),
-/* harmony export */   "decodeCSV_Angles": () => (/* reexport safe */ _lib__WEBPACK_IMPORTED_MODULE_0__.decodeCSV_Angles),
 /* harmony export */   "deg2rad": () => (/* reexport safe */ _lib__WEBPACK_IMPORTED_MODULE_0__.deg2rad),
+/* harmony export */   "directionExists": () => (/* reexport safe */ _lib__WEBPACK_IMPORTED_MODULE_0__.directionExists),
 /* harmony export */   "faultParams": () => (/* reexport safe */ _lib__WEBPACK_IMPORTED_MODULE_0__.faultParams),
 /* harmony export */   "faultStressComponents": () => (/* reexport safe */ _lib__WEBPACK_IMPORTED_MODULE_0__.faultStressComponents),
 /* harmony export */   "getDirectionFromString": () => (/* reexport safe */ _lib__WEBPACK_IMPORTED_MODULE_0__.getDirectionFromString),

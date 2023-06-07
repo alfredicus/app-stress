@@ -33,7 +33,7 @@
     </div>
 
     <div id="menu" style="position: absolute; opacity: 100%; margin-bottom:3px; top: 5px; left: 5px;"></div>
-    <input id="upload" type="file" style="visibility:hidden" />
+    <input id="upload" type="file" style="visibility:hidden" multiple />
 
     <script>
         class Interface {
@@ -56,13 +56,59 @@
 
         let stressLib = globalThis['@alfredo-taboada/stress']
 
+        const inv = new stressLib.InverseMethod()
+        const csv = {
+            params: {
+            }
+        }
+
         const upload = document.getElementById('upload')
         upload.onchange = () => {
+
+            // TODO
+            // First pass, check the files
+
+            let status = true
+            const messages = []
+
             for (const file of upload.files) {
                 file.arrayBuffer().then(arrayBuffer => {
-                    //console.log()
-                    const buffer = (new TextDecoder()).decode(arrayBuffer).split('\n')
-                    //stressLib.decodeCSV_Angles(buffer, csv.params).forEach(data => inv.addData(data))
+                    const datas = []
+                    const lines = (new TextDecoder()).decode(arrayBuffer).split('\n')
+
+                    // Note that we start at index 1, not 0 (the header)
+                    for (let lineIndex = 1; lineIndex < lines.length; ++lineIndex) {
+                        const line1 = lines[lineIndex]
+                        const toks1 = line1.split(';').map(s => s.replace(',', '.')) // because Excel
+                        const dataType = toks1[0]
+                        const data = stressLib.DataFactory.create(dataType)
+
+                        let r = undefined
+                        const nbLineToRead = data.nbLinkedData()
+
+                        if (nbLineToRead === 1) {
+                            r = stressLib.DataDescription.check({ data, lines: [line1], lineNumber: lineIndex + 1 })
+                        } else if (nbLineToRead === 2) {
+                            lineIndex++
+                            const line2 = lines[lineIndex]
+                            const toks2 = line2.split(';').map(s => s.replace(',', '.')) // because Excel
+                            if (toks2[0] !== toks[0]) {
+                                throw new Error(`Two consecutive lines are not the same data type (${toks[0]} and ${toks2[0]})`)
+                            }
+                            r = stressLib.DataDescription.check({ data, lines: [line1, line2], lineNumber: lineIndex + 1 })
+                        } else {
+                            throw new Error('More than 2 lines is not supported yet')
+                        }
+
+                        if (r.status === false) {
+                            r.messages.forEach(msg => {
+                                messages.push(msg + ` (for file ${file} at line ${lineIndex + 1})`)
+                            })
+                            status = false
+                        } else {
+
+                        }
+                    }
                 })
             }
         }
@@ -70,12 +116,12 @@
         const interface = new Interface('menu')
 
         const data = interface.gui.addFolder('Data')
-        data
-        data.add(interface, 'loadData').name('Load')   // Button
-        data.add(interface, 'clearData').name('Clear') // Button
+        //data.add( interface, 'Data type', { StriatedPlane: 1, CompactionBand: 2, CompactionShearBand: 3 } );
+        data.add(interface, 'loadData').name('Upload')   // Button
+        data.add(interface, 'clearData').name('Clear data') // Button
 
         const run = interface.gui.addFolder('Simulation')
-        run.add(interface, 'run').name('run')
+        run.add(interface, 'run').name('Invert')
 
     </script>
 </body>
