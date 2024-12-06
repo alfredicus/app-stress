@@ -1,23 +1,18 @@
 {
-    "name": "taboada",
-    "version": "0.0.2",
+    "name": "stress-inv-0",
+    "version": "0.0.0",
     "description": "",
-    "main": "index.js",
     "scripts": {
+<<<<<<< HEAD
         "serve": "http-server ../ -p 89 -o /app-stress/index.html",
         "serve-test": "http-server ../ -p 89 -o /app-stress/index-test.html"
+=======
+        "serve": "http-server ../ -p 88 -o /app-stress-0/index.html"
+>>>>>>> 806068543d52d28b1fa75690ea79bfd38714acca
     },
     "author": "alfredo",
     "license": "MIT",
     "dependencies": {
-        "@alfredo-taboada/stress": "^0.0.4",
-        "@youwol/dataframe": "^0.0.35",
-        "@youwol/geometry": "^0.0.21",
-        "@youwol/io": "^0.0.25-wip",
-        "@youwol/kepler": "^0.0.10-wip",
-        "@youwol/math": "^0.0.21",
-        "@youwol/three-extra": "^0.0.9",
-        "three": "^0.128.0",
-        "three-trackballcontrols": "^0.9.0"
+        "@alfredo-taboada/stress": "^0.0.4"
     }
 }
