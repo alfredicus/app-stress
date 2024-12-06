@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Stress inversion TEST</title>
+    <script src='/stress/dist/@alfredo-taboada/stress.js'></script>
+</head>
+<body>
+
+    <script>
+        let stress = globalThis['@alfredo-taboada/stress']
+
+        const faultSet = []
+        let f = undefined
+        
+        f = new stress.Fault({strike: 45, dipDirection: stress.Direction.SE, dip: 60})
+        f.setStriation({rake: 5, strikeDirection: stress.Direction.NE, sensOfMovement: stress.SensOfMovement.RL})
+        faultSet.push(f)
+
+        f = new stress.Fault({strike: 45, dipDirection: stress.Direction.SE, dip: 30})
+        f.setStriation({rake: 4, strikeDirection: stress.Direction.SW, sensOfMovement: stress.SensOfMovement.RL})
+        faultSet.push(f)
+
+        f = new stress.Fault({strike: 45, dipDirection: stress.Direction.NW, dip: 45})
+        f.setStriation({rake: 3, strikeDirection: stress.Direction.SW, sensOfMovement: stress.SensOfMovement.RL})
+        faultSet.push(f)
+
+        f = new stress.Fault({strike: 135, dipDirection: stress.Direction.NE, dip: 60})
+        f.setStriation({rake: 6, strikeDirection: stress.Direction.SE, sensOfMovement: stress.SensOfMovement.LL})
+        faultSet.push(f)
+
+        f = new stress.Fault({strike: 135, dipDirection: stress.Direction.NE, dip: 30})
+        f.setStriation({rake: 2, strikeDirection: stress.Direction.NW, sensOfMovement: stress.SensOfMovement.LL})
+        faultSet.push(f)
+
+        f = new stress.Fault({strike: 135, dipDirection: stress.Direction.SW, dip: 40})
+        f.setStriation({rake: 1, strikeDirection: stress.Direction.SE, sensOfMovement: stress.SensOfMovement.LL})
+        faultSet.push(f)
+
+        // ...
+
+        const inv = new stress.InverseMethod({
+            lambda: [1, 0, 0.5],
+            RTrot: [[1,0,0], [0,1,0], [0,0,1]],
+            angleIntervalS: stress.deg2rad(15),
+            stressRatioInterval: 0.2
+        })
+        inv.setCriterion( new stress.Etchecopar() )
+        inv.addFaultSet(faultSet)
+        inv.run()
+    </script>
+</body>
+</html>

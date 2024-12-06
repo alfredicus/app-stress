@@ -4,9 +4,10 @@
     "description": "",
     "main": "index.js",
     "scripts": {
-        "serve": "http-server ../ -p 88 -o /app-stress/index.html"
+        "serve": "http-server ../ -p 89 -o /app-stress/index.html",
+        "serve-test": "http-server ../ -p 89 -o /app-stress/index-test.html"
     },
-    "author": "fmaerten",
+    "author": "alfredo",
     "license": "MIT",
     "dependencies": {
         "@alfredo-taboada/stress": "^0.0.4",
